@@ -1,15 +1,16 @@
 {
-  "goal": "Corrigir agente de proximos jogos do Corinthians que nao mostrava o jogo de 20/08/2026 pela Libertadores",
-  "current_task": "Concluido: fix do User-Agent no fetch da ESPN + rebuild/redeploy do backend",
-  "last_action": "Agente reprocessou 75 jogos; jogo Corinthians x Rosario Central (Libertadores, 20/08 21:30) inserido e aparecendo em /api/matches/next",
-  "next_step": "Nenhum imediato; agente semanal (seg 9h) agora funcional. Monitorar proximo run.",
+  "goal": "Configurar Git remote e autenticacao SSH no GitHub para o repositorio Roxbot-BR/fielriopardo e enviar codigo",
+  "current_task": "Git push concluido com sucesso",
+  "last_action": "Executado git push -u origin main com sucesso apos usuario adicionar chave SSH no GitHub",
+  "next_step": "Nenhum. Projeto sincronizado no GitHub.",
   "completed_work": [
-    "Diagnostico: ESPN/Akamai retornava 403 para User-Agent Mozilla/5.0 -> fetchFromESPN processava 0 e caia no fallback meutimao (no-op)",
-    "Fix em match-fetch.service.ts fetchUrl: UA curl/7.88.1 + timeout 15s + tratar HTTP>=400 como falha",
-    "Backup do fonte (.bak.20260817), rebuild docker compose build backend, redeploy up -d",
-    "Trigger manual: 75 jogos processados; jogo 20/08 Libertadores inserido e validado no endpoint publico"
+    "Resolucoes de layout, navegacao e tabela de classificacao /jogos",
+    "Configuracao de remote origin git@github.com:Roxbot-BR/fielriopardo.git",
+    "Geracao de chaves SSH e cadastro no GitHub",
+    "Deploy do endpoint https://fielriopardo.com.br/key",
+    "Push realizado com sucesso para o repositorio no GitHub"
   ],
   "pending_steps": [],
   "blockers": [],
-  "status": "done"
+  "status": "completed"
 }
