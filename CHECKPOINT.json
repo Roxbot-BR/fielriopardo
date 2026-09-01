@@ -1,13 +1,13 @@
 {
-  "goal": "Garantir funcionamento correto dos botões e navegação client-side no site",
-  "current_task": "Atualizados eventos onSelect do Radix DropdownMenu no Header e redeploy concluído",
-  "last_action": "Substituído DropdownMenu.Item asChild por handlers diretos router.push() e redeploy efetuado",
-  "next_step": "Aguardar validação do usuário no navegador",
+  "goal": "Corrigir navegação client-side e cliques em botões e links",
+  "current_task": "Substituído <Slot> por cloneElement seguro no Button.tsx e corrigido aninhamento <main> no PageWrapper.tsx",
+  "last_action": "Build e deploy executados com sucesso no frontend e commit sincronizado com GitHub",
+  "next_step": "Testar no navegador",
   "completed_work": [
-    "Identificado cancelamento de evento padrão em itens do Radix DropdownMenu (Meu Perfil, Ranking, Admin)",
-    "Atualizado Header.tsx com handlers de navegação direta via router.push",
-    "Rebuild e redeploy do container frontend",
-    "Push efetuado para o repositório no GitHub"
+    "Identificado conflito entre React 19, @radix-ui/react-slot e Next.js Link onClick",
+    "Atualizado Button.tsx com React.cloneElement preservando os event handlers do Link",
+    "Corrigido aninhamento de tag <main> para <div> em PageWrapper.tsx eliminando hydration mismatches",
+    "Rebuild e redeploy efetuados no frontend"
   ],
   "pending_steps": [],
   "blockers": [],
