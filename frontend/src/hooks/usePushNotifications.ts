@@ -1,4 +1,5 @@
 'use client';
+import { getAuthHeader } from '@/lib/api';
 import { useState, useEffect, useCallback } from 'react';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? '';
@@ -58,7 +59,7 @@ export function usePushNotifications() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
+          Authorization: getAuthHeader(token),
         },
         body: JSON.stringify(subJson),
       });
@@ -84,7 +85,7 @@ export function usePushNotifications() {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
+          Authorization: getAuthHeader(token),
         },
         body: JSON.stringify({ endpoint: sub.endpoint }),
       });

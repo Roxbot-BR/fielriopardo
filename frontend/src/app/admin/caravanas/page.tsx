@@ -3,7 +3,7 @@ import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Camera, Plus, Pencil, Trash2, Upload, X, ImageIcon, MessageCircle, Lock, RotateCcw } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
-import { API_URL } from "@/lib/api";
+import { API_URL, getAuthHeader } from "@/lib/api";
 
 interface Caravan {
   id: string;
@@ -63,7 +63,12 @@ export default function AdminCaravanasPage() {
   const [gallery, setGallery] = useState<string[]>([]);
   const [galleryUploading, setGalleryUploading] = useState(false);
 
-  const authHeader = { Authorization: `Bearer ${token}` };
+  const authHeader = {
+    get Authorization() {
+      const t = typeof window !== "undefined" ? localStorage.getItem("fiel_token") : null;
+      return getAuthHeader(t);
+    }
+  };
 
   useEffect(() => {
     if (!isAdmin && !isMaster) { router.push("/"); return; }
@@ -74,7 +79,7 @@ export default function AdminCaravanasPage() {
   async function loadCaravans() {
     setLoading(true);
     try {
-      const res = await fetch(`${API_URL}/caravans`, { headers: authHeader });
+      const res = await fetch(`${API_URL}/caravans`, { headers: { ...authHeader, "Content-Type": "application/json" } });
       const data = await res.json();
       setCaravans(Array.isArray(data) ? data : []);
     } catch {
@@ -119,7 +124,7 @@ export default function AdminCaravanasPage() {
     try {
       const fd = new FormData();
       fd.append("file", file);
-      const res = await fetch(`${API_URL}/caravans/upload`, { method: "POST", headers: authHeader, body: fd });
+      const res = await fetch(`${API_URL}/caravans/upload`, { method: "POST", headers: { ...authHeader, "Content-Type": "application/json" }, body: fd });
       const data = await res.json();
       if (data.url) {
         setForm(f => ({ ...f, coverImage: data.url }));
@@ -136,7 +141,7 @@ export default function AdminCaravanasPage() {
     try {
       const fd = new FormData();
       fd.append("file", file);
-      const res = await fetch(`${API_URL}/caravans/upload-gallery`, { method: "POST", headers: authHeader, body: fd });
+      const res = await fetch(`${API_URL}/caravans/upload-gallery`, { method: "POST", headers: { ...authHeader, "Content-Type": "application/json" }, body: fd });
       const data = await res.json();
       if (data.url) setGallery(g => [...g, data.url]);
     } catch {
@@ -150,7 +155,7 @@ export default function AdminCaravanasPage() {
     try {
       const fd = new FormData();
       Array.from(files).forEach(f => fd.append("files", f));
-      const res = await fetch(`${API_URL}/caravans/upload-gallery-multiple`, { method: "POST", headers: authHeader, body: fd });
+      const res = await fetch(`${API_URL}/caravans/upload-gallery-multiple`, { method: "POST", headers: { ...authHeader, "Content-Type": "application/json" }, body: fd });
       const data = await res.json();
       const urls: string[] = Array.isArray(data.urls)
         ? data.urls
@@ -210,7 +215,7 @@ export default function AdminCaravanasPage() {
   async function handleDelete(id: string) {
     if (!confirm("Remover caravana?")) return;
     try {
-      await fetch(`${API_URL}/caravans/${id}`, { method: "DELETE", headers: authHeader });
+      await fetch(`${API_URL}/caravans/${id}`, { method: "DELETE", headers: { ...authHeader, "Content-Type": "application/json" } });
       setMsg("Caravana removida!");
       loadCaravans();
     } catch {

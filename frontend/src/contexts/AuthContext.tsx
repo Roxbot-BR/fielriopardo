@@ -1,6 +1,6 @@
 "use client";
 import { createContext, useContext, useState, useEffect, useMemo, ReactNode } from "react";
-import api from "@/lib/api";
+import api, { getAuthHeader } from "@/lib/api";
 import { User } from "@/types";
 
 interface AuthCtx {
@@ -43,7 +43,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const parsed = JSON.parse(u);
         setUser(parsed);
         setCookie("fiel_token", t);
-        api.get("/auth/me", { headers: { Authorization: `Bearer ${t}` } })
+        api.get("/auth/me", { headers: { Authorization: getAuthHeader(t) } })
           .then(({ data }) => {
             const fresh = { ...parsed, ...data };
             if (JSON.stringify(fresh) !== JSON.stringify(parsed)) {

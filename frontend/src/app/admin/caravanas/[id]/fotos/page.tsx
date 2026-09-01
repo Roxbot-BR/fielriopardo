@@ -1,7 +1,7 @@
 "use client";
 import React, { useState, useRef, useCallback, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { API_URL } from "@/lib/api";
+import { API_URL, getAuthHeader } from "@/lib/api";
 import {
   Upload, FolderOpen, Trash2, Star, StarOff, Download, X,
   ChevronLeft, ChevronRight, MessageCircle, Pencil, Check, Camera,
@@ -74,7 +74,7 @@ export default function BancoFotosPage() {
 
   const authHeader = () => {
     const token = typeof window !== "undefined" ? (localStorage.getItem("fiel_token") ?? localStorage.getItem("token") ?? "") : "";
-    return { Authorization: `Bearer ${token}` };
+    return { Authorization: getAuthHeader(token) };
   };
 
   const showToast = (msg: string) => {

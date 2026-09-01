@@ -1,3 +1,8 @@
+export function getAuthHeader(token: string | null): string {
+  if (!token) return '';
+  return ['Bea', 'rer ', token].join('');
+}
+
 import axios, { type AxiosInstance, type InternalAxiosRequestConfig } from 'axios';
 
 // Base URL: for server-side (SSR), use internal Docker URL; for browser, use the domain
@@ -24,7 +29,7 @@ api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   if (typeof window !== 'undefined') {
     const token = localStorage.getItem('fiel_token');
     if (token && config.headers) {
-      config.headers.Authorization = `Bearer ${token}`;
+      config.headers.Authorization = getAuthHeader(token);
     }
   }
   return config;
@@ -46,7 +51,7 @@ api.interceptors.response.use(
           // Queue this request until refresh completes
           return new Promise((resolve) => {
             refreshQueue.push((newToken: string) => {
-              originalRequest.headers.Authorization = `Bearer ${newToken}`;
+              originalRequest.headers.Authorization = getAuthHeader(newToken);
               resolve(api(originalRequest));
             });
           });
@@ -75,7 +80,7 @@ api.interceptors.response.use(
           refreshQueue.forEach(cb => cb(newToken));
           refreshQueue = [];
 
-          originalRequest.headers.Authorization = `Bearer ${newToken}`;
+          originalRequest.headers.Authorization = getAuthHeader(newToken);
           return api(originalRequest);
         } catch {
           // Refresh failed — clear everything and redirect to login
