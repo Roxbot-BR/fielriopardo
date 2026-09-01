@@ -11,7 +11,7 @@ interface PageWrapperProps {
 
 export function PageWrapper({ children, className, fullWidth = false, glass = false }: PageWrapperProps) {
   return (
-    <main
+    <div
       className={cn(
         'mx-auto w-full px-4 sm:px-6 lg:px-8 py-8',
         !fullWidth && 'max-w-7xl',
@@ -31,6 +31,6 @@ export function PageWrapper({ children, className, fullWidth = false, glass = fa
           {children}
         </div>
       ) : children}
-    </main>
+    </div>
   );
 }
