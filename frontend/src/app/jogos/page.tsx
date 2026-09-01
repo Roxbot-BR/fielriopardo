@@ -94,10 +94,10 @@ const COMPETITIONS = [
       rivals: 'Peñarol (URU) · Santa Fe (COL) · Platense (ARG)',
       note: 'Fase de grupos iniciada · Sorteio: 19/03/2026 · Final: 28/11/2026 em Montevidéu',
       groupStandings: [
-        { pos: 1, team: 'Corinthians', logo: 'https://a.espncdn.com/i/teamlogos/soccer/500/874.png',   country: '🇧🇷', pts: 0, j: 0, v: 0, e: 0, d: 0, gp: 0, gc: 0, sg: 0, highlight: true },
-        { pos: 2, team: 'Peñarol',     logo: 'https://a.espncdn.com/i/teamlogos/soccer/500/2683.png',  country: '🇺🇾', pts: 0, j: 0, v: 0, e: 0, d: 0, gp: 0, gc: 0, sg: 0, highlight: false },
-        { pos: 3, team: 'Santa Fe',    logo: 'https://a.espncdn.com/i/teamlogos/soccer/500/5488.png',  country: '🇨🇴', pts: 0, j: 0, v: 0, e: 0, d: 0, gp: 0, gc: 0, sg: 0, highlight: false },
-        { pos: 4, team: 'Platense',    logo: 'https://a.espncdn.com/i/teamlogos/soccer/500/7764.png',  country: '🇦🇷', pts: 0, j: 0, v: 0, e: 0, d: 0, gp: 0, gc: 0, sg: 0, highlight: false },
+        { pos: 1, team: 'Corinthians', logo: 'https://a.espncdn.com/i/teamlogos/soccer/500/874.png',   country: '🇧🇷', pts: 11, j: 6, v: 3, e: 2, d: 1, gp: 8, gc: 4, sg: 4, highlight: true },
+        { pos: 2, team: 'Platense',    logo: 'https://a.espncdn.com/i/teamlogos/soccer/500/7764.png',  country: '🇦🇷', pts: 10, j: 6, v: 3, e: 1, d: 2, gp: 8, gc: 7, sg: 1, highlight: false },
+        { pos: 3, team: 'Santa Fe',    logo: 'https://a.espncdn.com/i/teamlogos/soccer/500/5488.png',  country: '🇨🇴', pts: 8,  j: 6, v: 2, e: 2, d: 2, gp: 6, gc: 7, sg: -1, highlight: false },
+        { pos: 4, team: 'Peñarol',     logo: 'https://a.espncdn.com/i/teamlogos/soccer/500/2683.png',  country: '🇺🇾', pts: 3,  j: 6, v: 0, e: 3, d: 3, gp: 4, gc: 8, sg: -4, highlight: false },
       ],
       groupMatches: [
         { round: 'R1', date: '09/04 · 21h',    match: 'Platense × Corinthians', venue: 'Buenos Aires, ARG', home: false,

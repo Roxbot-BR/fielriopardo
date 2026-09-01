@@ -93,7 +93,12 @@ export class MatchesService {
       };
       const espnSlug = compSlugMap[(match.competition as string)?.toUpperCase?.()] ?? 'bra.1';
       const url = `https://site.api.espn.com/apis/site/v2/sports/soccer/${espnSlug}/summary?event=${espnId}`;
-      https.get(url, (res: any) => {
+      const options = {
+        hostname: 'site.api.espn.com',
+        path: '/apis/v2/sports/soccer/bra.1/standings',
+        headers: { 'User-Agent': 'curl/7.88.1', 'Accept': '*/*' }
+      };
+      https.get(options, (res: any) => {
         let data = '';
         res.on('data', (c: any) => (data += c));
         res.on('end', () => {
@@ -367,7 +372,12 @@ export class MatchesService {
     return new Promise((resolve, reject) => {
       const https = require('https');
       const url = 'https://site.api.espn.com/apis/v2/sports/soccer/bra.1/standings';
-      https.get(url, (res: any) => {
+      const options = {
+        hostname: 'site.api.espn.com',
+        path: '/apis/v2/sports/soccer/bra.1/standings',
+        headers: { 'User-Agent': 'curl/7.88.1', 'Accept': '*/*' }
+      };
+      https.get(options, (res: any) => {
         let data = '';
         res.on('data', (chunk: string) => data += chunk);
         res.on('end', () => {
@@ -378,19 +388,22 @@ export class MatchesService {
             const entries = group?.standings?.entries ?? [];
             if (!entries.length) return resolve(null);
 
-            const statsKey = (entry: any, key: string): number => {
-              const s = entry.stats?.find((x: any) => x.abbreviation === key || x.name === key);
-              return s ? Number(s.value ?? s.displayValue ?? 0) : 0;
+            const getStat = (entry: any, typeName: string): number => {
+              const s = entry.stats?.find((x: any) =>
+                x.type === typeName || x.name === typeName || x.abbreviation === typeName
+              );
+              return s ? Math.round(Number(s.value ?? s.displayValue ?? 0)) : 0;
             };
 
             const standings = entries.map((entry: any, i: number) => {
-              const gp = statsKey(entry, 'GP');
-              const w  = statsKey(entry, 'W');
-              const d  = statsKey(entry, 'D');
-              const l  = statsKey(entry, 'L');
-              const gf = statsKey(entry, 'F');
-              const ga = statsKey(entry, 'A');
-              const pts = statsKey(entry, 'P') || statsKey(entry, 'PTS') || statsKey(entry, 'Points');
+              const gp  = getStat(entry, 'gamesplayed');
+              const w   = getStat(entry, 'wins');
+              const d   = getStat(entry, 'ties');
+              const l   = getStat(entry, 'losses');
+              const gf  = getStat(entry, 'pointsfor');
+              const ga  = getStat(entry, 'pointsagainst');
+              const gd  = getStat(entry, 'pointdifferential');
+              const pts = getStat(entry, 'points');
               return {
                 position: i + 1,
                 team: entry.team?.displayName ?? entry.team?.name ?? 'Desconhecido',
@@ -402,7 +415,7 @@ export class MatchesService {
                 losses: l,
                 goalsFor: gf,
                 goalsAgainst: ga,
-                goalDiff: statsKey(entry, 'GD') || (gf - ga),
+                goalDiff: gd || (gf - ga),
               };
             });
 
