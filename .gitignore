@@ -27,3 +27,4 @@ backups/
 # Misc
 .DS_Store
 *.pem
+DEPLOY_KEY*
