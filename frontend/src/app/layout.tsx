@@ -69,12 +69,11 @@ export default function RootLayout({
         <script
           dangerouslySetInnerHTML={{
             __html: `
-              if (typeof window !== 'undefined') {
-                if ('serviceWorker' in navigator) {
-                  navigator.serviceWorker.getRegistrations().then(function(regs) {
-                    for (var r of regs) { r.unregister(); }
+              if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+                navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' })
+                  .then(function(reg) {
+                    reg.update();
                   }).catch(function(){});
-                }
                 if ('caches' in window) {
                   caches.keys().then(function(names) {
                     for (var n of names) { caches.delete(n); }

@@ -56,55 +56,21 @@ export default function NotificationBanner() {
 
   if (isPwa) {
     return (
-      <>
-        <div className="fixed inset-0 bg-black/70 z-40 animate-in fade-in duration-300" onClick={handleDismiss} />
-        <div className="fixed inset-x-4 top-1/2 -translate-y-1/2 z-50 max-w-md mx-auto bg-gradient-to-br from-zinc-900 via-zinc-900 to-zinc-800 border-2 border-yellow-500/50 rounded-3xl shadow-2xl p-6 animate-in zoom-in-95 duration-300">
-          <div className="flex flex-col items-center text-center">
-            <div className="w-16 h-16 bg-yellow-500/20 rounded-full flex items-center justify-center mb-4 animate-pulse">
-              <span className="text-5xl">🔔</span>
-            </div>
-            <h3 className="text-white font-bold text-xl mb-2">Ative as Notificações!</h3>
-            <p className="text-zinc-300 text-sm leading-relaxed mb-6 px-2">Receba alertas em tempo real sobre:</p>
-            <div className="w-full bg-zinc-800/50 rounded-2xl p-4 mb-6 space-y-3 text-left">
-              <div className="flex items-start gap-3">
-                <span className="text-xl mt-0.5">⚽</span>
-                <div className="flex-1">
-                  <p className="text-white font-semibold text-sm">Jogos do Corinthians</p>
-                  <p className="text-zinc-400 text-xs">Horários e resultados</p>
-                </div>
-              </div>
-              <div className="flex items-start gap-3">
-                <span className="text-xl mt-0.5">🎯</span>
-                <div className="flex-1">
-                  <p className="text-white font-semibold text-sm">Bolão Aberto</p>
-                  <p className="text-zinc-400 text-xs">Não perca a chance de palpitar</p>
-                </div>
-              </div>
-              <div className="flex items-start gap-3">
-                <span className="text-xl mt-0.5">🏆</span>
-                <div className="flex-1">
-                  <p className="text-white font-semibold text-sm">Ranking Atualizado</p>
-                  <p className="text-zinc-400 text-xs">Veja sua posição no bolão</p>
-                </div>
-              </div>
-            </div>
-            <div className="w-full flex flex-col gap-3">
-              <button onClick={handleAllow} disabled={loading} className="w-full bg-yellow-500 hover:bg-yellow-400 active:scale-95 disabled:opacity-50 disabled:scale-100 text-black font-bold text-base py-4 px-6 rounded-xl transition-all shadow-lg">
-                {loading ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                    </svg>
-                    Ativando…
-                  </span>
-                ) : '✓ Ativar Notificações'}
-              </button>
-              <button onClick={handleDismiss} className="w-full bg-transparent hover:bg-zinc-800 text-zinc-400 hover:text-white text-sm py-3 px-4 rounded-xl transition-colors border border-zinc-700">Agora não</button>
-            </div>
+      <div className="fixed bottom-4 left-4 right-4 z-50 max-w-md mx-auto bg-gradient-to-br from-zinc-900 via-zinc-900 to-zinc-800 border-2 border-yellow-500/50 rounded-2xl shadow-2xl p-5 animate-in slide-in-from-bottom-4">
+        <div className="flex flex-col items-center text-center">
+          <div className="w-12 h-12 bg-yellow-500/20 rounded-full flex items-center justify-center mb-3">
+            <span className="text-3xl">🔔</span>
+          </div>
+          <h3 className="text-white font-bold text-lg mb-1">Ative as Notificações!</h3>
+          <p className="text-zinc-300 text-xs leading-relaxed mb-4 px-2">Receba alertas em tempo real sobre jogos, bolão e ranking.</p>
+          <div className="w-full flex gap-2">
+            <button onClick={handleAllow} disabled={loading} className="flex-1 bg-yellow-500 hover:bg-yellow-400 active:scale-95 disabled:opacity-50 text-black font-bold text-xs py-2.5 px-4 rounded-xl transition-all">
+              {loading ? 'Ativando…' : '✓ Ativar'}
+            </button>
+            <button onClick={handleDismiss} className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white text-xs py-2.5 px-4 rounded-xl transition-colors border border-zinc-700">Agora não</button>
           </div>
         </div>
-      </>
+      </div>
     );
   }
 
