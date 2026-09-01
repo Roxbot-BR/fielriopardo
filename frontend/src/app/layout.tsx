@@ -66,6 +66,24 @@ export default function RootLayout({
   return (
     <html lang="pt-BR" className={inter.className}>
       <body className="bg-transparent text-white antialiased">
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              if (typeof window !== 'undefined') {
+                if ('serviceWorker' in navigator) {
+                  navigator.serviceWorker.getRegistrations().then(function(regs) {
+                    for (var r of regs) { r.unregister(); }
+                  }).catch(function(){});
+                }
+                if ('caches' in window) {
+                  caches.keys().then(function(names) {
+                    for (var n of names) { caches.delete(n); }
+                  }).catch(function(){});
+                }
+              }
+            `,
+          }}
+        />
         {/* Fixed background image layer */}
         <div
           aria-hidden="true"
