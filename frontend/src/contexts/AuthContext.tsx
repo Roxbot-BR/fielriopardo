@@ -1,5 +1,5 @@
 "use client";
-import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, useMemo, ReactNode } from "react";
 import api from "@/lib/api";
 import { User } from "@/types";
 
@@ -29,8 +29,8 @@ function deleteCookie(name: string) {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser]     = useState<User | null>(null);
-  const [token, setToken]   = useState<string | null>(null);
+  const [user, setUser]         = useState<User | null>(null);
+  const [token, setToken]       = useState<string | null>(null);
   const [isLoading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -40,16 +40,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (t && u) {
       try {
         setToken(t);
-        setUser(JSON.parse(u));
+        const parsed = JSON.parse(u);
+        setUser(parsed);
         setCookie("fiel_token", t);
-        // Refresh user data from API to pick up any server-side changes (e.g. birthDate, roles)
         api.get("/auth/me", { headers: { Authorization: `Bearer ${t}` } })
           .then(({ data }) => {
-            const fresh = { ...JSON.parse(u), ...data };
-            setUser(fresh);
-            localStorage.setItem("fiel_user", JSON.stringify(fresh));
+            const fresh = { ...parsed, ...data };
+            if (JSON.stringify(fresh) !== JSON.stringify(parsed)) {
+              setUser(fresh);
+              localStorage.setItem("fiel_user", JSON.stringify(fresh));
+            }
           })
-          .catch(() => { /* keep cached user if API fails */ });
+          .catch(() => { /* keep cached user */ });
       } catch {
         localStorage.removeItem("fiel_token");
         localStorage.removeItem("fiel_user");
@@ -93,16 +95,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     window.location.href = "/";
   };
 
-  const hasRole = (r: string) => user?.roles?.includes(r as any) ?? false;
-
-  return (
-    <AuthContext.Provider value={{
+  const value = useMemo(() => {
+    const roles = user?.roles ?? [];
+    return {
       user, token, isLoading,
       isAuthenticated: !!user && !!token,
-      isMaster: hasRole("MASTER"),
-      isAdmin:  hasRole("ADMIN") || hasRole("MASTER"),
+      isMaster: roles.includes("MASTER" as any),
+      isAdmin:  roles.includes("ADMIN" as any) || roles.includes("MASTER" as any),
       login, register, logout,
-    }}>
+    };
+  }, [user, token, isLoading]);
+
+  return (
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );
