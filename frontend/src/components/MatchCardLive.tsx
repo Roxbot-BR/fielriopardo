@@ -102,8 +102,9 @@ function useCountdown(targetDate: string) {
     };
   }, [targetDate]);
 
-  const [time, setTime] = useState(calc);
+  const [time, setTime] = useState<ReturnType<typeof calc> | null>(null);
   useEffect(() => {
+    setTime(calc());
     const t = setInterval(() => setTime(calc()), 1000);
     return () => clearInterval(t);
   }, [calc]);
@@ -307,6 +308,8 @@ export function MatchCardLive({ initialMatch }: MatchCardLiveProps) {
 
 function CountdownSection({ matchDate, isToday }: { matchDate: string; isToday: boolean }) {
   const time = useCountdown(matchDate);
+
+  if (!time) return null;
 
   if (time.expired) {
     return <span className="text-yellow-400 text-xs font-bold">Em breve...</span>;
