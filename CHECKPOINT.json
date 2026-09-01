@@ -1,14 +1,13 @@
 {
-  "goal": "Configurar Git remote e autenticacao SSH no GitHub para o repositorio Roxbot-BR/fielriopardo e enviar codigo",
-  "current_task": "Git push concluido com sucesso",
-  "last_action": "Executado git push -u origin main com sucesso apos usuario adicionar chave SSH no GitHub",
-  "next_step": "Nenhum. Projeto sincronizado no GitHub.",
+  "goal": "Garantir funcionamento correto dos botões e navegação client-side no site",
+  "current_task": "Atualizados eventos onSelect do Radix DropdownMenu no Header e redeploy concluído",
+  "last_action": "Substituído DropdownMenu.Item asChild por handlers diretos router.push() e redeploy efetuado",
+  "next_step": "Aguardar validação do usuário no navegador",
   "completed_work": [
-    "Resolucoes de layout, navegacao e tabela de classificacao /jogos",
-    "Configuracao de remote origin git@github.com:Roxbot-BR/fielriopardo.git",
-    "Geracao de chaves SSH e cadastro no GitHub",
-    "Deploy do endpoint https://fielriopardo.com.br/key",
-    "Push realizado com sucesso para o repositorio no GitHub"
+    "Identificado cancelamento de evento padrão em itens do Radix DropdownMenu (Meu Perfil, Ranking, Admin)",
+    "Atualizado Header.tsx com handlers de navegação direta via router.push",
+    "Rebuild e redeploy do container frontend",
+    "Push efetuado para o repositório no GitHub"
   ],
   "pending_steps": [],
   "blockers": [],
