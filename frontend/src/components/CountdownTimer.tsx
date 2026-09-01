@@ -13,10 +13,10 @@ interface CountdownTimerProps {
 function pad(n: number) { return String(n).padStart(2, '0'); }
 
 export function CountdownTimer({ targetDate, label = 'Fechamento do Bolão em:', onExpire, variant = 'default' }: CountdownTimerProps) {
-  const target = typeof targetDate === 'string' ? new Date(targetDate) : targetDate;
+  const targetTime = typeof targetDate === 'string' ? new Date(targetDate).getTime() : targetDate.getTime();
 
   const calc = () => {
-    const diff = Math.max(0, Math.floor((target.getTime() - Date.now()) / 1000));
+    const diff = Math.max(0, Math.floor((targetTime - Date.now()) / 1000));
     return {
       days: Math.floor(diff / 86400),
       hours: Math.floor((diff % 86400) / 3600),
@@ -36,7 +36,7 @@ export function CountdownTimer({ targetDate, label = 'Fechamento do Bolão em:',
       if (next.expired) { clearInterval(t); onExpire?.(); }
     }, 1000);
     return () => clearInterval(t);
-  }, [target]);
+  }, [targetTime]);
 
   if (!time) return null;
   if (time.expired) {
