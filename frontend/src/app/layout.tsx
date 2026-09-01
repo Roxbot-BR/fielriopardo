@@ -13,6 +13,7 @@ import './globals.css';
 const inter = Inter({ subsets: ['latin'], display: 'swap' });
 
 export const metadata: Metadata = {
+  metadataBase: new URL('https://fielriopardo.com.br'),
   title: 'Fiel Rio Pardo | Torcida Organizada Corinthians',
   description:
     'Torcida Organizada Fiel Rio Pardo — Corinthians em São José do Rio Pardo - SP. Bolão, notícias, jogos e muito mais!',

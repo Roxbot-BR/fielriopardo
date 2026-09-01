@@ -6,9 +6,8 @@ export const metadata: Metadata = {
   openGraph: {
     title: 'Bolão | Fiel Rio Pardo',
     description: 'Participe do Bolão da Fiel Rio Pardo e dispute com outros torcedores!',
-    url: 'https://fielriopardo.com.br/bolao',
-    siteName: 'Fiel Rio Pardo',
-    images: [{ url: 'https://fielriopardo.com.br/og-image.jpg', width: 1200, height: 630 }],
+        siteName: 'Fiel Rio Pardo',
+    images: [{ url: 'https://fielriopardo.com.br/og-bolao.jpg', width: 1200, height: 630 }],
     locale: 'pt_BR',
     type: 'website',
   },
@@ -16,7 +15,7 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     title: 'Bolão | Fiel Rio Pardo',
     description: 'Participe do Bolão da Fiel Rio Pardo!',
-    images: ['https://fielriopardo.com.br/og-image.jpg'],
+    images: ['https://fielriopardo.com.br/og-bolao.jpg'],
   },
 };
 
