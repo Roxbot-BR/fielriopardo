@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Menu, X, ChevronDown, LogOut, User, Trophy, Settings, LayoutDashboard, Share2 } from 'lucide-react';
 
@@ -46,6 +46,7 @@ const WHATSAPP_SHARE_URL =
 
 export function Header() {
   const pathname = usePathname() || '';
+  const router = useRouter();
   const { user, isAuthenticated, logout } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [canNativeShare, setCanNativeShare] = useState(false);
@@ -137,40 +138,32 @@ const isMasterRole = user?.roles?.includes('MASTER');
                     sideOffset={5}
                     align="end"
                   >
-                    <DropdownMenu.Item asChild>
-                      <Link
-                        href="/bolao/perfil"
-                        className="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-white hover:bg-[#2d2d2d] hover:text-[#C8A951] cursor-pointer"
-                      >
-                        <User size={14} /> Meu Perfil
-                      </Link>
+                    <DropdownMenu.Item
+                      onSelect={() => router.push('/bolao/perfil')}
+                      className="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-white hover:bg-[#2d2d2d] hover:text-[#C8A951] cursor-pointer"
+                    >
+                      <User size={14} /> Meu Perfil
                     </DropdownMenu.Item>
-                    <DropdownMenu.Item asChild>
-                      <Link
-                        href="/bolao/ranking"
-                        className="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-white hover:bg-[#2d2d2d] hover:text-[#C8A951] cursor-pointer"
-                      >
-                        <Trophy size={14} /> Ranking
-                      </Link>
+                    <DropdownMenu.Item
+                      onSelect={() => router.push('/bolao/ranking')}
+                      className="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-white hover:bg-[#2d2d2d] hover:text-[#C8A951] cursor-pointer"
+                    >
+                      <Trophy size={14} /> Ranking
                     </DropdownMenu.Item>
                     {(isAdmin || isMasterRole) && (
                       <>
                         <DropdownMenu.Separator className="my-1 h-px bg-[#2d2d2d]" />
-                        <DropdownMenu.Item asChild>
-                          <Link
-                            href={isMasterRole ? '/master' : '/admin'}
-                            className="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-[#C8A951] hover:bg-[#C8A951]/10 cursor-pointer"
-                          >
-                            <LayoutDashboard size={14} /> {isMasterRole ? 'Painel Master' : 'Painel Admin'}
-                          </Link>
+                        <DropdownMenu.Item
+                          onSelect={() => router.push(isMasterRole ? '/master' : '/admin')}
+                          className="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-[#C8A951] hover:bg-[#C8A951]/10 cursor-pointer"
+                        >
+                          <LayoutDashboard size={14} /> {isMasterRole ? 'Painel Master' : 'Painel Admin'}
                         </DropdownMenu.Item>
-                        <DropdownMenu.Item asChild>
-                          <Link
-                            href={isMasterRole ? '/master/settings' : '/admin/bolao'}
-                            className="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-[#C8A951] hover:bg-[#C8A951]/10 cursor-pointer"
-                          >
-                            <Settings size={14} /> Configurações do Sistema
-                          </Link>
+                        <DropdownMenu.Item
+                          onSelect={() => router.push(isMasterRole ? '/master/settings' : '/admin/bolao')}
+                          className="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-[#C8A951] hover:bg-[#C8A951]/10 cursor-pointer"
+                        >
+                          <Settings size={14} /> Configurações do Sistema
                         </DropdownMenu.Item>
                       </>
                     )}
