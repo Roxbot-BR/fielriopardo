@@ -8,7 +8,7 @@ import { NewsCard } from '@/components/NewsCard';
 import { SocialCards } from '@/components/SocialCards';
 import { ElencoSlider } from '@/components/ElencoSlider';
 import { CaravanasPreview } from '@/components/CaravanasPreview';
-import { Button } from '@/components/ui/Button';
+import { buttonVariants } from '@/components/ui/Button';
 import { Card, CardContent } from '@/components/ui/Card';
 import { MatchCardLive } from '@/components/MatchCardLive';
 import type { NewsItem, Match } from '@/types';
@@ -148,12 +148,8 @@ export default async function HomePage() {
               São José do Rio Pardo — SP 🖤🤍
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <Button asChild size="lg">
-                <Link href="/bolao">⚽ Entrar no Bolão</Link>
-              </Button>
-              <Button asChild size="lg" variant="outline">
-                <Link href="/jogos">Ver Próximo Jogo</Link>
-              </Button>
+              <Link href="/bolao" className={buttonVariants({ size: 'lg' })}>⚽ Entrar no Bolão</Link>
+              <Link href="/jogos" className={buttonVariants({ size: 'lg', variant: 'outline' })}>Ver Próximo Jogo</Link>
             </div>
           </div>
         </section>
@@ -169,9 +165,7 @@ export default async function HomePage() {
                 <span className="text-2xl">📰</span>
                 <h2 className="text-2xl font-black text-white">Últimas Notícias</h2>
               </div>
-              <Button asChild variant="outline" size="sm">
-                <Link href="/noticias">Ver todas →</Link>
-              </Button>
+              <Link href="/noticias" className={buttonVariants({ variant: 'outline', size: 'sm' })}>Ver todas →</Link>
             </div>
             {news.length > 0 ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -204,12 +198,8 @@ export default async function HomePage() {
                 </div>
               )}
               <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                <Button asChild size="lg" variant="secondary">
-                  <Link href="/bolao">Participar do Bolão</Link>
-                </Button>
-                <Button asChild size="lg" variant="ghost">
-                  <Link href="/bolao/ranking" className="text-black hover:text-black">Ver Ranking</Link>
-                </Button>
+                <Link href="/bolao" className={buttonVariants({ size: 'lg', variant: 'secondary' })}>Participar do Bolão</Link>
+                <Link href="/bolao/ranking" className={buttonVariants({ size: 'lg', variant: 'ghost', className: 'text-black hover:text-black' })}>Ver Ranking</Link>
               </div>
             </div>
           </PageWrapper>
