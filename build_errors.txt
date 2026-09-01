@@ -1,0 +1,352 @@
+#1 [internal] load local bake definitions
+#1 reading from stdin 516B done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from Dockerfile
+#2 transferring dockerfile: 474B done
+#2 DONE 0.0s
+
+#3 [internal] load metadata for docker.io/library/node:20-alpine
+#3 DONE 0.0s
+
+#4 [internal] load .dockerignore
+#4 transferring context: 74B done
+#4 DONE 0.0s
+
+#5 [builder 1/6] FROM docker.io/library/node:20-alpine@sha256:f598378b5240225e6beab68fa9f356db1fb8efe55173e6d4d8153113bb8f333c
+#5 resolve docker.io/library/node:20-alpine@sha256:f598378b5240225e6beab68fa9f356db1fb8efe55173e6d4d8153113bb8f333c 0.0s done
+#5 DONE 0.0s
+
+#6 [internal] load build context
+#6 transferring context: 5.29kB done
+#6 DONE 0.0s
+
+#7 [builder 3/6] COPY package*.json ./
+#7 CACHED
+
+#8 [builder 4/6] RUN npm ci
+#8 CACHED
+
+#9 [builder 2/6] WORKDIR /app
+#9 CACHED
+
+#10 [builder 5/6] COPY . .
+#10 CACHED
+
+#11 [builder 6/6] RUN npm run build
+#11 0.549 
+#11 0.549 > backend@0.0.1 build
+#11 0.549 > nest build
+#11 0.549 
+#11 10.65 [96msrc/agents/news/news-agent.service.ts[0m:[93m27[0m:[93m35[0m - [91merror[0m[90m TS2345: [0mArgument of type 'string | null' is not assignable to parameter of type 'string'.
+#11 10.65   Type 'null' is not assignable to type 'string'.
+#11 10.65 
+#11 10.65 [7m27[0m       await this.fetchGeneralNews(apiKey);
+#11 10.65 [7m  [0m [91m                                  ~~~~~~[0m
+#11 10.65 [96msrc/agents/news/news-agent.service.ts[0m:[93m39[0m:[93m32[0m - [91merror[0m[90m TS2345: [0mArgument of type 'string | null' is not assignable to parameter of type 'string'.
+#11 10.65   Type 'null' is not assignable to type 'string'.
+#11 10.65 
+#11 10.65 [7m39[0m         this.fetchTransferNews(apiKey),
+#11 10.65 [7m  [0m [91m                               ~~~~~~[0m
+#11 10.65 [96msrc/agents/news/news-agent.service.ts[0m:[93m40[0m:[93m32[0m - [91merror[0m[90m TS2345: [0mArgument of type 'string | null' is not assignable to parameter of type 'string'.
+#11 10.65   Type 'null' is not assignable to type 'string'.
+#11 10.65 
+#11 10.65 [7m40[0m         this.fetchMatchPreview(apiKey),
+#11 10.65 [7m  [0m [91m                               ~~~~~~[0m
+#11 10.65 [96msrc/agents/news/news-agent.service.ts[0m:[93m41[0m:[93m30[0m - [91merror[0m[90m TS2345: [0mArgument of type 'string | null' is not assignable to parameter of type 'string'.
+#11 10.65   Type 'null' is not assignable to type 'string'.
+#11 10.65 
+#11 10.65 [7m41[0m         this.fetchRetrospect(apiKey),
+#11 10.65 [7m  [0m [91m                             ~~~~~~[0m
+#11 10.65 [96msrc/agents/news/news-agent.service.ts[0m:[93m63[0m:[93m32[0m - [91merror[0m[90m TS18047: [0m'jsonMatch' is possibly 'null'.
+#11 10.65 
+#11 10.65 [7m63[0m       const items = JSON.parse(jsonMatch[0]);
+#11 10.65 [7m  [0m [91m                               ~~~~~~~~~[0m
+#11 10.65 [96msrc/agents/news/news-agent.service.ts[0m:[93m73[0m:[93m35[0m - [91merror[0m[90m TS2339: [0mProperty 'fetchRSS' does not exist on type 'NewsAgentService'.
+#11 10.65 
+#11 10.65 [7m73[0m     const rssContent = await this.fetchRSS();
+#11 10.65 [7m  [0m [91m                                  ~~~~~~~~[0m
+#11 10.65 [96msrc/agents/news/news-agent.service.ts[0m:[93m79[0m:[93m24[0m - [91merror[0m[90m TS2552: [0mCannot find name 'titleM'. Did you mean 'title'?
+#11 10.65 
+#11 10.65 [7m79[0m       const title   = (titleM?.[1] || titleM?.[2] || '').trim();
+#11 10.65 [7m  [0m [91m                       ~~~~~~[0m
+#11 10.65 
+#11 10.65   [96msrc/agents/news/news-agent.service.ts[0m:[93m79[0m:[93m13[0m
+#11 10.65     [7m79[0m       const title   = (titleM?.[1] || titleM?.[2] || '').trim();
+#11 10.65     [7m  [0m [96m            ~~~~~[0m
+#11 10.65     'title' is declared here.
+#11 10.65 [96msrc/agents/news/news-agent.service.ts[0m:[93m79[0m:[93m39[0m - [91merror[0m[90m TS2552: [0mCannot find name 'titleM'. Did you mean 'title'?
+#11 10.65 
+#11 10.65 [7m79[0m       const title   = (titleM?.[1] || titleM?.[2] || '').trim();
+#11 10.65 [7m  [0m [91m                                      ~~~~~~[0m
+#11 10.65 
+#11 10.65   [96msrc/agents/news/news-agent.service.ts[0m:[93m79[0m:[93m13[0m
+#11 10.65     [7m79[0m       const title   = (titleM?.[1] || titleM?.[2] || '').trim();
+#11 10.65     [7m  [0m [96m            ~~~~~[0m
+#11 10.65     'title' is declared here.
+#11 10.65 [96msrc/agents/news/news-agent.service.ts[0m:[93m81[0m:[93m25[0m - [91merror[0m[90m TS2304: [0mCannot find name 'descM'.
+#11 10.65 
+#11 10.65 [7m81[0m       const summary = ((descM?.[1] || descM?.[2] || '').replace(/<[^>]+>/g, '').trim()).slice(0, 400) || title;
+#11 10.65 [7m  [0m [91m                        ~~~~~[0m
+#11 10.65 [96msrc/agents/news/news-agent.service.ts[0m:[93m81[0m:[93m39[0m - [91merror[0m[90m TS2304: [0mCannot find name 'descM'.
+#11 10.65 
+#11 10.65 [7m81[0m       const summary = ((descM?.[1] || descM?.[2] || '').replace(/<[^>]+>/g, '').trim()).slice(0, 400) || title;
+#11 10.65 [7m  [0m [91m                                      ~~~~~[0m
+#11 10.65 [96msrc/agents/news/news-agent.service.ts[0m:[93m118[0m:[93m35[0m - [91merror[0m[90m TS2339: [0mProperty 'fetchRSS' does not exist on type 'NewsAgentService'.
+#11 10.65 
+#11 10.65 [7m118[0m     const rssContent = await this.fetchRSS();
+#11 10.65 [7m   [0m [91m                                  ~~~~~~~~[0m
+#11 10.65 [96msrc/agents/news/news-agent.service.ts[0m:[93m126[0m:[93m26[0m - [91merror[0m[90m TS2552: [0mCannot find name 'titleM'. Did you mean 'title'?
+#11 10.65 
+#11 10.65 [7m126[0m         const title   = (titleM?.[1] || titleM?.[2] || '').trim();
+#11 10.65 [7m   [0m [91m                         ~~~~~~[0m
+#11 10.65 
+#11 10.65   [96msrc/agents/news/news-agent.service.ts[0m:[93m126[0m:[93m15[0m
+#11 10.65     [7m126[0m         const title   = (titleM?.[1] || titleM?.[2] || '').trim();
+#11 10.65     [7m   [0m [96m              ~~~~~[0m
+#11 10.65     'title' is declared here.
+#11 10.65 [96msrc/agents/news/news-agent.service.ts[0m:[93m126[0m:[93m41[0m - [91merror[0m[90m TS2552: [0mCannot find name 'titleM'. Did you mean 'title'?
+#11 10.65 
+#11 10.65 [7m126[0m         const title   = (titleM?.[1] || titleM?.[2] || '').trim();
+#11 10.65 [7m   [0m [91m                                        ~~~~~~[0m
+#11 10.65 
+#11 10.65   [96msrc/agents/news/news-agent.service.ts[0m:[93m126[0m:[93m15[0m
+#11 10.65     [7m126[0m         const title   = (titleM?.[1] || titleM?.[2] || '').trim();
+#11 10.65     [7m   [0m [96m              ~~~~~[0m
+#11 10.65     'title' is declared here.
+#11 10.65 [96msrc/agents/news/news-agent.service.ts[0m:[93m128[0m:[93m27[0m - [91merror[0m[90m TS2304: [0mCannot find name 'descM'.
+#11 10.65 
+#11 10.65 [7m128[0m         const summary = ((descM?.[1] || descM?.[2] || '').replace(/<[^>]+>/g, '').trim()).slice(0, 400) || title;
+#11 10.65 [7m   [0m [91m                          ~~~~~[0m
+#11 10.65 [96msrc/agents/news/news-agent.service.ts[0m:[93m128[0m:[93m41[0m - [91merror[0m[90m TS2304: [0mCannot find name 'descM'.
+#11 10.65 
+#11 10.65 [7m128[0m         const summary = ((descM?.[1] || descM?.[2] || '').replace(/<[^>]+>/g, '').trim()).slice(0, 400) || title;
+#11 10.65 [7m   [0m [91m                                        ~~~~~[0m
+#11 10.65 [96msrc/agents/news/news-agent.service.ts[0m:[93m156[0m:[93m32[0m - [91merror[0m[90m TS18047: [0m'jsonMatch' is possibly 'null'.
+#11 10.65 
+#11 10.65 [7m156[0m       const items = JSON.parse(jsonMatch[0]) as Array<{ title: string; summary: string; sourceUrl: string }>;
+#11 10.65 [7m   [0m [91m                               ~~~~~~~~~[0m
+#11 10.65 [96msrc/agents/news/news-agent.service.ts[0m:[93m188[0m:[93m34[0m - [91merror[0m[90m TS18047: [0m'jsonMatch' is possibly 'null'.
+#11 10.65 
+#11 10.65 [7m188[0m         const items = JSON.parse(jsonMatch[0]) as Array<{ title: string; summary: string }>;
+#11 10.65 [7m   [0m [91m                                 ~~~~~~~~~[0m
+#11 10.65 [96msrc/agents/news/news-agent.service.ts[0m:[93m222[0m:[93m32[0m - [91merror[0m[90m TS18047: [0m'jsonMatch' is possibly 'null'.
+#11 10.65 
+#11 10.65 [7m222[0m       const items = JSON.parse(jsonMatch[0]) as Array<{ title: string; summary: string }>;
+#11 10.65 [7m   [0m [91m                               ~~~~~~~~~[0m
+#11 10.65 [96msrc/agents/news/news-agent.service.ts[0m:[93m245[0m:[93m3[0m - [91merror[0m[90m TS1128: [0mDeclaration or statement expected.
+#11 10.65 
+#11 10.65 [7m245[0m   private fetchRSS(): Promise<string | null> {
+#11 10.65 [7m   [0m [91m  ~~~~~~~[0m
+#11 10.65 [96msrc/agents/news/news-agent.service.ts[0m:[93m245[0m:[93m11[0m - [91merror[0m[90m TS2304: [0mCannot find name 'fetchRSS'.
+#11 10.65 
+#11 10.65 [7m245[0m   private fetchRSS(): Promise<string | null> {
+#11 10.65 [7m   [0m [91m          ~~~~~~~~[0m
+#11 10.65 [96msrc/agents/news/news-agent.service.ts[0m:[93m245[0m:[93m21[0m - [91merror[0m[90m TS1005: [0m';' expected.
+#11 10.65 
+#11 10.65 [7m245[0m   private fetchRSS(): Promise<string | null> {
+#11 10.65 [7m   [0m [91m                    ~[0m
+#11 10.65 [96msrc/agents/news/news-agent.service.ts[0m:[93m245[0m:[93m23[0m - [91merror[0m[90m TS2447: [0mThe '|' operator is not allowed for boolean types. Consider using '||' instead.
+#11 10.65 
+#11 10.65 [7m245[0m   private fetchRSS(): Promise<string | null> {
+#11 10.65 [7m   [0m [91m                      ~~~~~~~~~~~~~~~~~~~~~~~~[0m
+#11 10.65 [7m246[0m     return new Promise((resolve) => {
+#11 10.65 [7m   [0m [91m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+#11 10.65 [7m...[0m 
+#11 10.65 [7m253[0m     });
+#11 10.65 [7m   [0m [91m~~~~~~~[0m
+#11 10.65 [7m254[0m   }
+#11 10.65 [7m   [0m [91m~~~[0m
+#11 10.65 [96msrc/agents/news/news-agent.service.ts[0m:[93m245[0m:[93m31[0m - [91merror[0m[90m TS2693: [0m'string' only refers to a type, but is being used as a value here.
+#11 10.65 
+#11 10.65 [7m245[0m   private fetchRSS(): Promise<string | null> {
+#11 10.65 [7m   [0m [91m                              ~~~~~~[0m
+#11 10.65 [96msrc/agents/news/news-agent.service.ts[0m:[93m245[0m:[93m40[0m - [91merror[0m[90m TS18050: [0mThe value 'null' cannot be used here.
+#11 10.65 
+#11 10.65 [7m245[0m   private fetchRSS(): Promise<string | null> {
+#11 10.65 [7m   [0m [91m                                       ~~~~[0m
+#11 10.65 [96msrc/agents/news/news-agent.service.ts[0m:[93m246[0m:[93m12[0m - [91merror[0m[90m TS1005: [0m':' expected.
+#11 10.65 
+#11 10.65 [7m246[0m     return new Promise((resolve) => {
+#11 10.65 [7m   [0m [91m           ~~~[0m
+#11 10.65 [96msrc/agents/news/news-agent.service.ts[0m:[93m253[0m:[93m7[0m - [91merror[0m[90m TS1005: [0m',' expected.
+#11 10.65 
+#11 10.65 [7m253[0m     });
+#11 10.65 [7m   [0m [91m      ~[0m
+#11 10.65 [96msrc/agents/news/news-agent.service.ts[0m:[93m256[0m:[93m3[0m - [91merror[0m[90m TS1434: [0mUnexpected keyword or identifier.
+#11 10.65 
+#11 10.65 [7m256[0m   async getCuriosidades(): Promise<any[]> {
+#11 10.65 [7m   [0m [91m  ~~~~~[0m
+#11 10.65 [96msrc/agents/news/news-agent.service.ts[0m:[93m256[0m:[93m3[0m - [91merror[0m[90m TS2304: [0mCannot find name 'async'.
+#11 10.65 
+#11 10.65 [7m256[0m   async getCuriosidades(): Promise<any[]> {
+#11 10.65 [7m   [0m [91m  ~~~~~[0m
+#11 10.65 [96msrc/agents/news/news-agent.service.ts[0m:[93m256[0m:[93m9[0m - [91merror[0m[90m TS2304: [0mCannot find name 'getCuriosidades'.
+#11 10.65 
+#11 10.65 [7m256[0m   async getCuriosidades(): Promise<any[]> {
+#11 10.65 [7m   [0m [91m        ~~~~~~~~~~~~~~~[0m
+#11 10.65 [96msrc/agents/news/news-agent.service.ts[0m:[93m256[0m:[93m26[0m - [91merror[0m[90m TS1005: [0m';' expected.
+#11 10.65 
+#11 10.65 [7m256[0m   async getCuriosidades(): Promise<any[]> {
+#11 10.65 [7m   [0m [91m                         ~[0m
+#11 10.65 [96msrc/agents/news/news-agent.service.ts[0m:[93m256[0m:[93m28[0m - [91merror[0m[90m TS2365: [0mOperator '>' cannot be applied to types 'boolean' and '{ const: any; if(records: any): any; "": boolean; return: any; }'.
+#11 10.65 
+#11 10.65 [7m256[0m   async getCuriosidades(): Promise<any[]> {
+#11 10.65 [7m   [0m [91m                           ~~~~~~~~~~~~~~~~[0m
+#11 10.65 [7m257[0m     const now = new Date();
+#11 10.65 [7m   [0m [91m~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+#11 10.65 [7m...[0m 
+#11 10.65 [7m264[0m     return records.flatMap((r) => (Array.isArray(r.contentJson) ? r.contentJson : [r.contentJson]));
+#11 10.65 [7m   [0m [91m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+#11 10.65 [7m265[0m   }
+#11 10.65 [7m   [0m [91m~~~[0m
+#11 10.65 [96msrc/agents/news/news-agent.service.ts[0m:[93m256[0m:[93m36[0m - [91merror[0m[90m TS2693: [0m'any' only refers to a type, but is being used as a value here.
+#11 10.65 
+#11 10.65 [7m256[0m   async getCuriosidades(): Promise<any[]> {
+#11 10.65 [7m   [0m [91m                                   ~~~[0m
+#11 10.65 [96msrc/agents/news/news-agent.service.ts[0m:[93m256[0m:[93m40[0m - [91merror[0m[90m TS1011: [0mAn element access expression should take an argument.
+#11 10.65 
+#11 10.65 [7m256[0m   async getCuriosidades(): Promise<any[]> {
+#11 10.65 [7m   [0m [91m                                       [0m
+#11 10.65 [96msrc/agents/news/news-agent.service.ts[0m:[93m257[0m:[93m11[0m - [91merror[0m[90m TS1005: [0m':' expected.
+#11 10.65 
+#11 10.65 [7m257[0m     const now = new Date();
+#11 10.65 [7m   [0m [91m          ~~~[0m
+#11 10.65 [96msrc/agents/news/news-agent.service.ts[0m:[93m257[0m:[93m11[0m - [91merror[0m[90m TS2304: [0mCannot find name 'now'.
+#11 10.65 
+#11 10.65 [7m257[0m     const now = new Date();
+#11 10.65 [7m   [0m [91m          ~~~[0m
+#11 10.65 [96msrc/agents/news/news-agent.service.ts[0m:[93m257[0m:[93m27[0m - [91merror[0m[90m TS1005: [0m',' expected.
+#11 10.65 
+#11 10.65 [7m257[0m     const now = new Date();
+#11 10.65 [7m   [0m [91m                          ~[0m
+#11 10.65 [96msrc/agents/news/news-agent.service.ts[0m:[93m258[0m:[93m11[0m - [91merror[0m[90m TS1005: [0m':' expected.
+#11 10.65 
+#11 10.65 [7m258[0m     const records = await this.aiContentRepo.find({
+#11 10.65 [7m   [0m [91m          ~~~~~~~[0m
+#11 10.65 [96msrc/agents/news/news-agent.service.ts[0m:[93m258[0m:[93m11[0m - [91merror[0m[90m TS2304: [0mCannot find name 'records'.
+#11 10.65 
+#11 10.65 [7m258[0m     const records = await this.aiContentRepo.find({
+#11 10.65 [7m   [0m [91m          ~~~~~~~[0m
+#11 10.65 [96msrc/agents/news/news-agent.service.ts[0m:[93m258[0m:[93m27[0m - [91merror[0m[90m TS2532: [0mObject is possibly 'undefined'.
+#11 10.65 
+#11 10.65 [7m258[0m     const records = await this.aiContentRepo.find({
+#11 10.65 [7m   [0m [91m                          ~~~~[0m
+#11 10.65 [96msrc/agents/news/news-agent.service.ts[0m:[93m259[0m:[93m57[0m - [91merror[0m[90m TS2304: [0mCannot find name 'now'.
+#11 10.65 
+#11 10.65 [7m259[0m       where: { type: 'curiosidade', expiresAt: MoreThan(now) },
+#11 10.65 [7m   [0m [91m                                                        ~~~[0m
+#11 10.65 [96msrc/agents/news/news-agent.service.ts[0m:[93m262[0m:[93m7[0m - [91merror[0m[90m TS1005: [0m',' expected.
+#11 10.65 
+#11 10.65 [7m262[0m     });
+#11 10.65 [7m   [0m [91m      ~[0m
+#11 10.65 [96msrc/agents/news/news-agent.service.ts[0m:[93m263[0m:[93m16[0m - [91merror[0m[90m TS1005: [0m',' expected.
+#11 10.65 
+#11 10.65 [7m263[0m     if (records.length === 0) return [];
+#11 10.65 [7m   [0m [91m               ~[0m
+#11 10.65 [96msrc/agents/news/news-agent.service.ts[0m:[93m263[0m:[93m29[0m - [91merror[0m[90m TS1005: [0m',' expected.
+#11 10.65 
+#11 10.65 [7m263[0m     if (records.length === 0) return [];
+#11 10.65 [7m   [0m [91m                            ~[0m
+#11 10.65 [96msrc/agents/news/news-agent.service.ts[0m:[93m263[0m:[93m38[0m - [91merror[0m[90m TS1005: [0m':' expected.
+#11 10.65 
+#11 10.65 [7m263[0m     if (records.length === 0) return [];
+#11 10.65 [7m   [0m [91m                                     ~[0m
+#11 10.65 [96msrc/agents/news/news-agent.service.ts[0m:[93m263[0m:[93m40[0m - [91merror[0m[90m TS1005: [0m',' expected.
+#11 10.65 
+#11 10.65 [7m263[0m     if (records.length === 0) return [];
+#11 10.65 [7m   [0m [91m                                       ~[0m
+#11 10.65 [96msrc/agents/news/news-agent.service.ts[0m:[93m264[0m:[93m12[0m - [91merror[0m[90m TS1005: [0m':' expected.
+#11 10.65 
+#11 10.65 [7m264[0m     return records.flatMap((r) => (Array.isArray(r.contentJson) ? r.contentJson : [r.contentJson]));
+#11 10.65 [7m   [0m [91m           ~~~~~~~[0m
+#11 10.65 [96msrc/agents/news/news-agent.service.ts[0m:[93m264[0m:[93m12[0m - [91merror[0m[90m TS2304: [0mCannot find name 'records'.
+#11 10.65 
+#11 10.65 [7m264[0m     return records.flatMap((r) => (Array.isArray(r.contentJson) ? r.contentJson : [r.contentJson]));
+#11 10.65 [7m   [0m [91m           ~~~~~~~[0m
+#11 10.65 [96msrc/agents/news/news-agent.service.ts[0m:[93m264[0m:[93m100[0m - [91merror[0m[90m TS1005: [0m',' expected.
+#11 10.65 
+#11 10.65 [7m264[0m     return records.flatMap((r) => (Array.isArray(r.contentJson) ? r.contentJson : [r.contentJson]));
+#11 10.65 [7m   [0m [91m                                                                                                   ~[0m
+#11 10.65 [96msrc/agents/news/news-agent.service.ts[0m:[93m267[0m:[93m3[0m - [91merror[0m[90m TS2304: [0mCannot find name 'findAll'.
+#11 10.65 
+#11 10.65 [7m267[0m   findAll(limit = 20, page = 1) {
+#11 10.65 [7m   [0m [91m  ~~~~~~~[0m
+#11 10.65 [96msrc/agents/news/news-agent.service.ts[0m:[93m267[0m:[93m11[0m - [91merror[0m[90m TS2304: [0mCannot find name 'limit'.
+#11 10.65 
+#11 10.65 [7m267[0m   findAll(limit = 20, page = 1) {
+#11 10.65 [7m   [0m [91m          ~~~~~[0m
+#11 10.65 [96msrc/agents/news/news-agent.service.ts[0m:[93m267[0m:[93m23[0m - [91merror[0m[90m TS2304: [0mCannot find name 'page'.
+#11 10.65 
+#11 10.65 [7m267[0m   findAll(limit = 20, page = 1) {
+#11 10.65 [7m   [0m [91m                      ~~~~[0m
+#11 10.65 [96msrc/agents/news/news-agent.service.ts[0m:[93m267[0m:[93m33[0m - [91merror[0m[90m TS1005: [0m';' expected.
+#11 10.65 
+#11 10.65 [7m267[0m   findAll(limit = 20, page = 1) {
+#11 10.65 [7m   [0m [91m                                ~[0m
+#11 10.65 [96msrc/agents/news/news-agent.service.ts[0m:[93m271[0m:[93m3[0m - [91merror[0m[90m TS2304: [0mCannot find name 'findByCategory'.
+#11 10.65 
+#11 10.65 [7m271[0m   findByCategory(category: string, limit = 20, page = 1) {
+#11 10.65 [7m   [0m [91m  ~~~~~~~~~~~~~~[0m
+#11 10.65 [96msrc/agents/news/news-agent.service.ts[0m:[93m271[0m:[93m18[0m - [91merror[0m[90m TS2304: [0mCannot find name 'category'.
+#11 10.65 
+#11 10.65 [7m271[0m   findByCategory(category: string, limit = 20, page = 1) {
+#11 10.65 [7m   [0m [91m                 ~~~~~~~~[0m
+#11 10.65 [96msrc/agents/news/news-agent.service.ts[0m:[93m271[0m:[93m26[0m - [91merror[0m[90m TS1005: [0m',' expected.
+#11 10.65 
+#11 10.65 [7m271[0m   findByCategory(category: string, limit = 20, page = 1) {
+#11 10.65 [7m   [0m [91m                         ~[0m
+#11 10.65 [96msrc/agents/news/news-agent.service.ts[0m:[93m271[0m:[93m28[0m - [91merror[0m[90m TS2693: [0m'string' only refers to a type, but is being used as a value here.
+#11 10.65 
+#11 10.65 [7m271[0m   findByCategory(category: string, limit = 20, page = 1) {
+#11 10.65 [7m   [0m [91m                           ~~~~~~[0m
+#11 10.65 [96msrc/agents/news/news-agent.service.ts[0m:[93m271[0m:[93m36[0m - [91merror[0m[90m TS2304: [0mCannot find name 'limit'.
+#11 10.65 
+#11 10.65 [7m271[0m   findByCategory(category: string, limit = 20, page = 1) {
+#11 10.65 [7m   [0m [91m                                   ~~~~~[0m
+#11 10.65 [96msrc/agents/news/news-agent.service.ts[0m:[93m271[0m:[93m48[0m - [91merror[0m[90m TS2304: [0mCannot find name 'page'.
+#11 10.65 
+#11 10.65 [7m271[0m   findByCategory(category: string, limit = 20, page = 1) {
+#11 10.65 [7m   [0m [91m                                               ~~~~[0m
+#11 10.65 [96msrc/agents/news/news-agent.service.ts[0m:[93m271[0m:[93m58[0m - [91merror[0m[90m TS1005: [0m';' expected.
+#11 10.65 
+#11 10.65 [7m271[0m   findByCategory(category: string, limit = 20, page = 1) {
+#11 10.65 [7m   [0m [91m                                                         ~[0m
+#11 10.65 [96msrc/agents/news/news-agent.service.ts[0m:[93m274[0m:[93m1[0m - [91merror[0m[90m TS1128: [0mDeclaration or statement expected.
+#11 10.65 
+#11 10.65 [7m274[0m }
+#11 10.65 [7m   [0m [91m~[0m
+#11 10.65 [96msrc/agents/news/news.controller.ts[0m:[93m14[0m:[93m21[0m - [91merror[0m[90m TS2339: [0mProperty 'findAll' does not exist on type 'NewsAgentService'.
+#11 10.65 
+#11 10.65 [7m14[0m     return this.svc.findAll(limit ? +limit : 20, page ? +page : 1);
+#11 10.65 [7m  [0m [91m                    ~~~~~~~[0m
+#11 10.65 [96msrc/agents/news/news.controller.ts[0m:[93m20[0m:[93m21[0m - [91merror[0m[90m TS2551: [0mProperty 'getCuriosidades' does not exist on type 'NewsAgentService'. Did you mean 'fetchCuriosidades'?
+#11 10.65 
+#11 10.65 [7m20[0m     return this.svc.getCuriosidades();
+#11 10.65 [7m  [0m [91m                    ~~~~~~~~~~~~~~~[0m
+#11 10.65 
+#11 10.65   [96msrc/agents/news/news-agent.service.ts[0m:[93m49[0m:[93m9[0m
+#11 10.65     [7m49[0m   async fetchCuriosidades() {
+#11 10.65     [7m  [0m [96m        ~~~~~~~~~~~~~~~~~[0m
+#11 10.65     'fetchCuriosidades' is declared here.
+#11 10.65 [96msrc/agents/news/news.controller.ts[0m:[93m30[0m:[93m21[0m - [91merror[0m[90m TS2339: [0mProperty 'findByCategory' does not exist on type 'NewsAgentService'.
+#11 10.65 
+#11 10.65 [7m30[0m     return this.svc.findByCategory(cat, limit ? +limit : 20, page ? +page : 1);
+#11 10.65 [7m  [0m [91m                    ~~~~~~~~~~~~~~[0m
+#11 10.65 
+#11 10.65 Found 63 error(s).
+#11 10.65 
+#11 ERROR: process "/bin/sh -c npm run build" did not complete successfully: exit code: 1
+------
+ > [builder 6/6] RUN npm run build:
+10.65     [7m49[0m   async fetchCuriosidades() {
+10.65     [7m  [0m [96m        ~~~~~~~~~~~~~~~~~[0m
+10.65     'fetchCuriosidades' is declared here.
+10.65 [96msrc/agents/news/news.controller.ts[0m:[93m30[0m:[93m21[0m - [91merror[0m[90m TS2339: [0mProperty 'findByCategory' does not exist on type 'NewsAgentService'.
+10.65 
+10.65 [7m30[0m     return this.svc.findByCategory(cat, limit ? +limit : 20, page ? +page : 1);
+10.65 [7m  [0m [91m                    ~~~~~~~~~~~~~~[0m
+10.65 
+10.65 Found 63 error(s).
+10.65 
+------

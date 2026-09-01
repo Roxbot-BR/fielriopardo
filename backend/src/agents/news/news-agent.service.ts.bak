@@ -1,0 +1,621 @@
+import { Injectable, Logger } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository, MoreThan, DataSource } from 'typeorm';
+import { Cron } from '@nestjs/schedule';
+import Anthropic from '@anthropic-ai/sdk';
+import * as https from 'https';
+import { NewsCache } from '../../database/entities/news-cache.entity';
+import { AiContent } from '../../database/entities/ai-content.entity';
+import { SettingsService } from '../../settings/settings.service';
+
+@Injectable()
+export class NewsAgentService {
+  private readonly logger = new Logger(NewsAgentService.name);
+
+  constructor(
+    @InjectRepository(NewsCache) private repo: Repository<NewsCache>,
+    @InjectRepository(AiContent) private aiContentRepo: Repository<AiContent>,
+    private settings: SettingsService,
+    private dataSource: DataSource,
+  ) {}
+
+  @Cron('0 0 3 * * *')
+  async cleanupOldNews(): Promise<void> {
+    // Hard-delete rows older than 30 days
+    const hardCutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const r1 = await this.repo.createQueryBuilder().delete()
+      .where('fetched_at < :cutoff', { cutoff: hardCutoff }).execute();
+    // Soft-delete stale news/transfer/oficial articles (published > 14 days ago)
+    const staleCutoff = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+    const r2 = await this.dataSource.query(
+      `UPDATE news_cache SET is_deleted=true
+       WHERE is_deleted=false AND category IN ('news','transfer','oficial')
+         AND COALESCE(published_at, fetched_at) < $1`,
+      [staleCutoff],
+    );
+    // Soft-delete match_preview articles whose match has passed (> 2 days ago)
+    const previewCutoff = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+    const r3 = await this.dataSource.query(
+      `UPDATE news_cache SET is_deleted=true
+       WHERE is_deleted=false AND category='match_preview'
+         AND COALESCE(published_at, fetched_at) < $1`,
+      [previewCutoff],
+    );
+    // Soft-delete non-men's-football content that slips past title filter
+    const r4 = await this.dataSource.query(
+      `UPDATE news_cache SET is_deleted=true
+       WHERE is_deleted=false
+         AND title ~* 'feminino|feminina|futsal|basquete|nbb|sub-[0-9]|teal rising|jogadoras inscritas|emily lima|bravas'`
+    );
+    this.logger.log(`Limpeza: ${r1.affected ?? 0} removidas, ${r2[1] ?? 0} obsoletas, ${r3[1] ?? 0} previews expiradas, ${r4[1] ?? 0} conteúdo filtrado`);
+  }
+
+  @Cron('0 0 */3 * * *')
+  async fetchAndSummarize() {
+    this.logger.log('Agente de noticias gerais em execucao...');
+    try {
+      await this.fetchOfficialNews();
+      await this.fetchTransferNews();
+      const apiKey = await this.settings.get('anthropic_api_key');
+      if (!apiKey) { this.logger.warn('Anthropic API key nao configurada'); return; }
+      await this.fetchGeneralNews(apiKey);
+    } catch (err: unknown) {
+      this.logger.error('Erro no agente de noticias: ' + String((err as any)?.message || err).slice(0, 150));
+    }
+  }
+
+  @Cron('0 0 */2 * * *')
+  async runCategoryAgents() {
+    this.logger.log('Agentes de categorias especificas em execucao...');
+    try {
+      const apiKey = await this.settings.get('anthropic_api_key');
+      if (!apiKey) { this.logger.warn('Anthropic API key nao configurada'); return; }
+      await Promise.allSettled([
+        this.fetchTransferNews(),
+        this.fetchMatchPreview(apiKey),
+        this.fetchRetrospect(apiKey),
+      ]);
+    } catch (err: unknown) {
+      this.logger.error('Erro nos agentes de categorias: ' + String((err as any)?.message || err).slice(0, 150));
+    }
+  }
+
+  @Cron('0 0 */6 * * *')
+  async fetchCuriosidades() {
+    this.logger.log('Buscando curiosidades do Corinthians...');
+    try {
+      const apiKey = await this.settings.get('anthropic_api_key');
+      if (!apiKey) { this.logger.warn('Anthropic API key nao configurada'); return; }
+      const client = new Anthropic({ apiKey });
+      const model = await this.settings.get('anthropic_model') ?? 'claude-haiku-4-5';
+      const systemPrompt = `Você é um historiador especialista em Sport Club Corinthians Paulista. 
+REGRAS ABSOLUTAS:
+- Use SOMENTE fatos 100% verificados e documentados historicamente
+- NUNCA invente datas, números, estatísticas ou eventos
+- NUNCA misture fatos de datas ou contextos diferentes  
+- Se não tiver certeza absoluta de um detalhe, não o inclua
+- Prefira: fundação (1910), títulos oficiais com anos certos, recordes bem documentados, personagens históricos consagrados
+- A Neo Química Arena foi inaugurada em 2014 e o naming rights com Neo Química foi firmado em 2020
+- O primeiro título mundial foi em 2000 (FIFA Club World Cup) e o segundo em 2012`;
+      const prompt = "Gere 3 curiosidades verdadeiras e verificáveis sobre o Sport Club Corinthians Paulista. Retorne SOMENTE JSON array (sem markdown): [{title, content, emoji}]";
+      const msg = await client.messages.create({
+        model,
+        max_tokens: 1500,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: prompt }],
+      });
+      const text = msg.content[0].type === 'text' ? msg.content[0].text : '';
+      const jsonMatch = text.match(/\[[\s\S]*\]/);
+      if (!jsonMatch) return;
+      const items = JSON.parse(jsonMatch[0]);
+      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      await this.aiContentRepo.save(
+        this.aiContentRepo.create({ type: 'curiosidade', contentJson: items, expiresAt }),
+      );
+      this.logger.log('Curiosidades salvas com sucesso');
+    } catch (err) { this.logger.error('Erro ao buscar curiosidades', err); }
+  }
+
+  async fetchGeneralNews(apiKey: string): Promise<void> {
+    const rssContent = await this.fetchRSS();
+    if (!rssContent) return;
+    const itemBlocks = [...rssContent.matchAll(/<item>([\s\S]*?)<\/item>/g)].slice(0, 15);
+    const parsedItems: Array<{ title: string; url: string; summary: string; imageUrl: string | null; pubDate: Date | null }> = [];
+    for (const block of itemBlocks) {
+      const raw = block[1];
+      const titleM = raw.match(/<title><!\[CDATA\[([^\]]+)\]\]>|<title>([^<]+)/);
+      const linkM  = raw.match(/<link>(https?[^<]+)|<guid[^>]*>(https?[^<]+)/);
+      const descM  = raw.match(/<description><!\[CDATA\[([\s\S]*?)\]\]>|<description>([^<]+)/);
+      const title   = (titleM?.[1] || titleM?.[2] || '').trim();
+      const url     = (linkM?.[1] || linkM?.[2] || 'https://www.meutimao.com.br').trim();
+      const summary = ((descM?.[1] || descM?.[2] || '').replace(/<[^>]+>/g, '').trim()).slice(0, 400) || title;
+      const enclosureM = raw.match(/<enclosure[^>]+url="([^"]+)"/);
+      const mediaContM  = raw.match(/<media:content[^>]+url="([^"]+)"/);
+      const mediaThumM  = raw.match(/<media:thumbnail[^>]+url="([^"]+)"/);
+      const imageUrl = enclosureM?.[1] || mediaContM?.[1] || mediaThumM?.[1] || null;
+      const pubDateM = raw.match(/<pubDate>([^<]+)<\/pubDate>/);
+      const pubDate = pubDateM ? new Date(pubDateM[1].trim()) : null;
+      // Skip women's team, youth, basketball, futsal content by title
+      const skipTitle = /feminino|feminin[ao]s?|emily\s+lima|sub-\d{2}|nbb|futsal|basquete|bravas/i;
+      if (skipTitle.test(title) || skipTitle.test(url)) continue;
+      if (title && title.length >= 10) {
+        // Skip articles older than 3 days (stale RSS items)
+        const maxAge = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+        if (pubDate && pubDate < maxAge) {
+          this.logger.log(`RSS: ignorando artigo antigo (${pubDate.toISOString().slice(0,10)}): ${title.slice(0,60)}`);
+          continue;
+        }
+        parsedItems.push({ title, url, summary, imageUrl, pubDate });
+      }
+    }
+    // Backfill missing images by scraping og:image from article pages
+    for (const item of parsedItems) {
+      if (!item.imageUrl && item.url && item.url !== 'https://www.meutimao.com.br') {
+        try { item.imageUrl = await this.scrapeOgImage(item.url); } catch {}
+      }
+    }
+    if (parsedItems.length === 0) return;
+    try {
+      const client = new Anthropic({ apiKey });
+      const model = await this.settings.get('anthropic_model') ?? 'claude-haiku-4-5';
+      const itemsList = parsedItems.map((it, i) => `${i + 1}. TITULO: ${it.title}`).join('\n');
+      const prompt = `Classifique cada noticia abaixo em uma dessas categorias:\n- news: noticias gerais do Corinthians (resultados, entrevistas, bastidores, tecnico, escalacao, tabela, campeonato)\n- transfer: SOMENTE noticias sobre contratacoes, vendas, saidas, renovacoes de contrato, rescisoes, emprestimos de JOGADORES (mercado da bola, negociacoes com outros clubes)\n- match_preview: previa ou analise tecnica de proximo jogo especifico\nATENCAO: Noticias sobre tatica, desempenho, arbitragem, transmissao, patrocinios, gestao do elenco = news. Apenas compra/venda/negociacao de jogador especifico = transfer.\nRetorne SOMENTE JSON array com objetos {index, category}:\n${itemsList}`;
+      const msg = await client.messages.create({
+        model,
+        max_tokens: 800,
+        messages: [{ role: 'user', content: prompt }],
+      });
+      const text = msg.content[0].type === 'text' ? msg.content[0].text : '';
+      const jsonMatch = text.match(/\[[\s\S]*\]/);
+      let classifications: Array<{ index: number; category: string }> = [];
+      if (jsonMatch) classifications = JSON.parse(jsonMatch[0]);
+      for (let i = 0; i < parsedItems.length; i++) {
+        const item = parsedItems[i];
+        const clf = classifications.find((c) => c.index === i + 1);
+        const cat = clf?.category && ['news', 'transfer', 'match_preview'].includes(clf.category) ? clf.category : 'news';
+        await this.saveNewsItem(item.title, item.summary, item.url, cat, item.imageUrl ?? undefined, item.pubDate ?? undefined);
+      }
+      this.logger.log(`${parsedItems.length} noticias gerais classificadas e salvas`);
+    } catch (err: unknown) {
+      this.logger.warn('Claude falhou na classificacao, salvando como news: ' + String((err as any)?.message || err).slice(0, 100));
+      for (const item of parsedItems) {
+        await this.saveNewsItem(item.title, item.summary, item.url, 'news', item.imageUrl ?? undefined, item.pubDate ?? undefined);
+      }
+    }
+  }
+
+
+  async fetchOfficialNews(): Promise<void> {
+    this.logger.log('Buscando noticias oficiais do Corinthians...');
+    try {
+      // Scrape directly from corinthians.com.br/noticias/futebol (men's football category)
+      const opts = { headers: { 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/123 Safari/537.36' }, timeout: 15000 };
+      const res = await fetch('https://www.corinthians.com.br/noticias/futebol', opts as RequestInit);
+      if (!res.ok) { this.logger.warn(`Oficial: HTTP ${res.status}`); return; }
+      const html = await res.text();
+
+      // Parse <li class="ct-news-list-item"> blocks
+      const itemBlocks = [...html.matchAll(/<li class="ct-news-list-item"[\s\S]*?<\/li>/g)];
+      this.logger.log(`Oficial: encontrados ${itemBlocks.length} items no HTML`);
+
+      let saved = 0;
+      const skipSlugs = /futebol-feminino|feminino|basquete|futsal|natacao|fut7|sub-\d{2}|\bbrabas\b|nbb/i;
+
+      for (const block of itemBlocks) {
+        const raw = block[0];
+        // URL slug from href
+        const urlM = raw.match(/href="(https:\/\/www\.corinthians\.com\.br\/noticias\/[^"]+)"/);
+        if (!urlM) continue;
+        const articleUrl = urlM[1];
+        const slug = articleUrl.replace('https://www.corinthians.com.br/noticias/', '');
+        if (skipSlugs.test(slug)) {
+          this.logger.log(`Oficial: ignorando slug feminino: ${slug}`);
+          continue;
+        }
+
+        // Image from static.corinthians.com.br
+        const imgM = raw.match(/src="(https:\/\/static\.corinthians\.com\.br\/uploads\/[^"]+)"/);
+        const imgUrl = imgM ? imgM[1] : undefined;
+
+        // Title from h4 or h3 or h2 text content
+        const titleM = raw.match(/<h[2-5][^>]*>\s*([^<\n]+?)\s*(?:<|\n)/);
+        const rawTitle = titleM ? titleM[1].trim() : slug.replace(/-/g, ' ');
+        // Decode HTML entities
+        const title = rawTitle
+          .replace(/&amp;/g, '&').replace(/&quot;/g, '"')
+          .replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+        if (title.length < 5) continue;
+        // Skip women's, youth, non-football content by title
+        const skipTitle = /feminino|feminin[ao]s?|emily\s+lima|sub-\d{2}|nbb|futsal|basquete|bravas/i;
+        if (skipTitle.test(title)) {
+          this.logger.log(`Oficial: ignorando por titulo: ${title}`);
+          continue;
+        }
+
+        // Try to extract date from slug (e.g. "futebol-masculino-treino-09-04-2026" or "jogo-09-4")
+        const dateInSlug = slug.match(/[-_](\d{1,2})[-_](\d{1,2})[-_](\d{4})$|[-_](\d{4})[-_](\d{2})[-_](\d{2})$/);
+        let pubDate: Date | undefined;
+        if (dateInSlug) {
+          const [,d,m,y,y2,m2,d2] = dateInSlug;
+          pubDate = y ? new Date(`${y}-${m!.padStart(2,'0')}-${d!.padStart(2,'0')}`) : new Date(`${y2}-${m2}-${d2}`);
+          if (isNaN(pubDate.getTime())) pubDate = undefined;
+        }
+        // If slug has a parseable date, skip if older than 7 days
+        const maxAge7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+        if (pubDate && pubDate < maxAge7d) {
+          this.logger.log(`Oficial: ignorando artigo antigo (${pubDate.toISOString().slice(0,10)}): ${slug.slice(0,60)}`);
+          continue;
+        }
+        // No date in slug = article appeared on listing today = treat as current
+        if (!pubDate) pubDate = new Date();
+
+        // Summary: use title as summary
+        const summary = title;
+
+        await this.saveNewsItem(title, summary, articleUrl, 'oficial', imgUrl, pubDate);
+        saved++;
+      }
+      this.logger.log(`Noticias oficiais: ${saved} processadas`);
+    } catch (err) {
+      this.logger.error('Erro fetchOfficialNews: ' + String(err?.message || err).slice(0, 150));
+    }
+  }
+
+  private async fetchAgenciaPhotoMap(): Promise<Map<string, string>> {
+    const map = new Map<string, string>();
+    return new Promise((resolve) => {
+      const https = require('https');
+      const req = https.get('https://agencia.corinthians.com.br/', {
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; bot/1.0)', 'Accept': 'text/html' },
+      }, (res: any) => {
+        let html = '';
+        res.on('data', (c: Buffer) => { if (html.length < 100000) html += c.toString(); });
+        res.on('end', () => {
+          // Parse: <div class="photo-item"><img src="..."><p>CAPTION</p></div>
+          const rx = /<div class="photo-item[^"]*"><img src="([^"]+)"[^>]*><p>([^<]+)<\/p>/g;
+          let m: RegExpExecArray | null;
+          while ((m = rx.exec(html)) !== null) {
+            const imgUrl = m[1].replace('_thumb.', '_medium.').replace('_thumb.jpg', '.jpg');
+            const caption = m[2].trim().toLowerCase();
+            // Skip feminino/basquete/sub content
+            if (/feminino|nbb|sub-|sub /.test(caption)) continue;
+            map.set(caption, m[1]); // Use thumbnail for article cards
+          }
+          resolve(map);
+        });
+        res.on('error', () => resolve(map));
+      });
+      req.on('error', () => resolve(map));
+      req.setTimeout(10000, () => { req.destroy(); resolve(map); });
+    });
+  }
+
+  async fetchTransferNews(_apiKey?: string): Promise<void> {
+    this.logger.log('Buscando noticias de transferencias...');
+    const rssContent = await this.fetchRSS();
+    const transferKeywords = ['contratac', 'transfere', 'transferi', 'reforc', 'renovac', 'emprestimo', 'rescisao', 'acertou com', 'chegad', 'venda do', 'vendido', 'anunci', 'mercado da bola', 'assina com', 'acordo com o clube', 'negociacao com', 'proximo reforc', 'mercado por', 'novo treinador', 'novo tecnico', 'novo comandante', 'busca treinador', 'mapeia mercado', 'quer contratar', 'demissao de', 'rescisao de'];
+    const transferItems: Array<{ title: string; url: string; summary: string; imageUrl: string | null; pubDate: Date | null }> = [];
+    if (rssContent) {
+      const itemBlocks = [...rssContent.matchAll(/<item>([\s\S]*?)<\/item>/g)].slice(0, 20);
+      for (const block of itemBlocks) {
+        const raw = block[1];
+        const titleM = raw.match(/<title><!\[CDATA\[([^\]]+)\]\]>|<title>([^<]+)/);
+        const linkM  = raw.match(/<link>(https?[^<]+)|<guid[^>]*>(https?[^<]+)/);
+        const descM  = raw.match(/<description><!\[CDATA\[([\s\S]*?)\]\]>|<description>([^<]+)/);
+        const title   = (titleM?.[1] || titleM?.[2] || '').trim();
+        const url     = (linkM?.[1] || linkM?.[2] || 'https://www.meutimao.com.br').trim();
+        const summary = ((descM?.[1] || descM?.[2] || '').replace(/<[^>]+>/g, '').trim()).slice(0, 400) || title;
+        const textLower = (title + ' ' + summary).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        const encMT = raw.match(/<enclosure[^>]+url="([^"]+)"/); const mediaMT = raw.match(/<media:content[^>]+url="([^"]+)"/); const imgT = encMT?.[1] || mediaMT?.[1] || null;
+        if (title.length >= 10 && transferKeywords.some((kw) => textLower.includes(kw))) {
+          const pubDateMT = raw.match(/<pubDate>([^<]+)<\/pubDate>/);
+          const pubDateT = pubDateMT ? new Date(pubDateMT[1].trim()) : null;
+          // Skip women's team / youth
+          const skipTitle = /\bfeminino\b|\bfeminin[ao]s?\b|emily\s+lima|\bsub-\d{2}\b|\bnbb\b|\bfutsal\b|\bbasquete\b|\bbravas\b/i;
+          if (!skipTitle.test(title)) transferItems.push({ title, url, summary, imageUrl: imgT, pubDate: pubDateT });
+        }
+      }
+    }
+    // Salva todas as noticias de transferencia do RSS (com ou sem imagem)
+    if (transferItems.length > 0) {
+      for (const item of transferItems.slice(0, 5)) {
+        await this.saveNewsItem(item.title, item.summary, item.url, "transfer", item.imageUrl ?? undefined, item.pubDate ?? undefined);
+      }
+      const withImg = transferItems.filter(i => i.imageUrl).length;
+      this.logger.log("Transferencias: " + transferItems.length + " candidatas, " + withImg + " com imagem");
+    } else {
+      this.logger.log("Nenhuma noticia de transferencia no RSS");
+    }
+  }
+
+  async fetchMatchPreview(apiKey: string): Promise<void> {
+    this.logger.log('Buscando previas de jogos...');
+    try {
+      // Auto-expire match_preview articles whose match has passed
+      await this.dataSource.query(
+        `UPDATE news_cache SET is_deleted=true WHERE category='match_preview' AND is_deleted=false AND published_at IS NOT NULL AND published_at < NOW() - INTERVAL '2 days'`
+      );
+      const matches = await this.dataSource.query(
+        `SELECT home_team, away_team, match_date, stadium, city, competition, round_label FROM matches WHERE status IN ('scheduled', 'live') ORDER BY match_date ASC LIMIT 3`,
+      );
+      const client = new Anthropic({ apiKey });
+      const model = await this.settings.get('anthropic_model') ?? 'claude-haiku-4-5';
+      for (const match of matches) {
+        const matchDate = new Date(match.match_date);
+        // Skip matches already played
+        if (matchDate < new Date()) {
+          this.logger.log(`Preview: jogo já ocorreu, ignorando`);
+          continue;
+        }
+        const opponent = match.home_team === 'Corinthians' ? match.away_team : match.home_team;
+        // Skip if already have 2+ previews for this opponent
+        const existing = await this.dataSource.query(
+          `SELECT COUNT(*) as cnt FROM news_cache WHERE category='match_preview' AND is_deleted=false AND title ILIKE $1`,
+          [`%${opponent}%`]
+        );
+        if (parseInt(existing[0]?.cnt ?? '0') >= 2) {
+          this.logger.log(`Preview: já existem previews para ${opponent}, pulando`);
+          continue;
+        }
+        const matchInfo = `${match.home_team} x ${match.away_team} - ${match.competition} ${match.round_label ? 'Rodada ' + match.round_label : ''} - ${matchDate.toLocaleDateString('pt-BR')} - ${match.stadium || ''}, ${match.city || ''}`;
+        const prompt = `Escreva 2 artigos de previa/analise do jogo: ${matchInfo}\nO Corinthians tem o tecnico Ramon Diaz e Memphis Depay no elenco.\nRetorne SOMENTE JSON array: [{title, summary}]\nOs artigos devem ser informativos e animadores para a torcida do Corinthians.`;
+        const msg = await client.messages.create({
+          model,
+          max_tokens: 1500,
+          messages: [{ role: 'user', content: prompt }],
+        });
+        const text = msg.content[0].type === 'text' ? msg.content[0].text : '';
+        const jsonMatch = text.match(/\[[\s\S]*\]/);
+        if (!jsonMatch) continue;
+        const items = JSON.parse(jsonMatch[0]) as Array<{ title: string; summary: string }>;
+        for (const item of items) {
+          await this.saveNewsItem(item.title, item.summary, 'https://www.meutimao.com.br/', 'match_preview', this.getCorinthiansImage(), matchDate);
+        }
+        this.logger.log(`Previas geradas para: ${matchInfo}`);
+      }
+    } catch (err) {
+      this.logger.error('Erro ao gerar previas: ' + String((err as any)?.message || err).slice(0, 100));
+    }
+  }
+
+  async fetchRetrospect(apiKey: string): Promise<void> {
+    this.logger.log('Buscando retrospecto...');
+    try {
+      const matches = await this.dataSource.query(
+        `SELECT home_team, away_team FROM matches WHERE status IN ('scheduled', 'live') ORDER BY match_date ASC LIMIT 1`,
+      );
+      const opponent = matches?.[0]
+        ? (matches[0].home_team === 'Corinthians' ? matches[0].away_team : matches[0].home_team)
+        : 'proximo adversario';
+      const client = new Anthropic({ apiKey });
+      const model = await this.settings.get('anthropic_model') ?? 'claude-haiku-4-5';
+      const prompt = `Escreva 3 artigos de retrospecto historico sobre confrontos entre Corinthians e ${opponent} no futebol brasileiro.\nInclua: numeros historicos, jogos memoraveis, estatisticas e curiosidades do confronto.\nRetorne SOMENTE JSON array: [{title, summary}]\nOs artigos devem ser detalhados e informativos para a torcida do Corinthians.`;
+      const msg = await client.messages.create({
+        model,
+        max_tokens: 2000,
+        messages: [{ role: 'user', content: prompt }],
+      });
+      const text = msg.content[0].type === 'text' ? msg.content[0].text : '';
+      const jsonMatch = text.match(/\[[\s\S]*\]/);
+      if (!jsonMatch) return;
+      const items = JSON.parse(jsonMatch[0]) as Array<{ title: string; summary: string }>;
+      for (const item of items) {
+        await this.saveNewsItem(item.title, item.summary, 'https://www.meutimao.com.br/', 'retrospect', this.getCorinthiansImage());
+      }
+      this.logger.log(`${items.length} artigos de retrospecto gerados (Corinthians x ${opponent})`);
+    } catch (err) {
+      this.logger.error('Erro ao gerar retrospecto: ' + String((err as any)?.message || err).slice(0, 100));
+    }
+  }
+
+  private corinthiansImageIndex = 0;
+  private readonly corinthiansImages = [
+    'https://upload.wikimedia.org/wikipedia/commons/thumb/e/e4/SC_Corinthians_Paulista.svg/600px-SC_Corinthians_Paulista.svg.png',
+    'https://cdn.meutimao.com.br/fotos-do-corinthians/w614/2026/02/13/memphis_depay_em_acao_diante_do_red_bull_pe12.jpg',
+    'https://cdn.meutimao.com.br/fotos-do-corinthians/w614/2026/03/28/dorival_junior_em_acao_durante_treino_do_1jhb.jpg',
+    'https://cdn.meutimao.com.br/fotos-do-corinthians/w614/2025/05/03/yuri_alberto_em_acao_contra_o_internacional_pelo_3t7i.jpg',
+    'https://cdn.meutimao.com.br/fotos-do-corinthians/w614/2026/04/02/jesse_lingard_vestindo_a_camisa_77_do_corinthians_43ip.jpg',
+    'https://a.espncdn.com/i/teamlogos/soccer/500/131.png',
+  ];
+
+  private getCorinthiansImage(): string {
+    const img = this.corinthiansImages[this.corinthiansImageIndex % this.corinthiansImages.length];
+    this.corinthiansImageIndex++;
+    return img;
+  }
+
+
+  private async saveNewsItem(title: string, summary: string, sourceUrl: string, category: string, imageUrl?: string, publishedAt?: Date, expiresAt?: Date): Promise<void> {
+    const exists = await this.repo.findOne({ where: { title } });
+    if (!exists) {
+      const entity = this.repo.create({
+        title,
+        summary: summary || title,
+        sourceUrl: sourceUrl || 'https://www.meutimao.com.br/',
+        category: category as any,
+        isApproved: true,
+        publishedAt: (publishedAt && !isNaN(publishedAt.getTime())) ? publishedAt : new Date(),
+        ...(expiresAt ? { expiresAt } : {}),
+      });
+      if (imageUrl) (entity as any).imageUrl = imageUrl;
+      await this.repo.save(entity);
+    } else {
+      // Prioritize specific category over generic 'news'
+      const updateData: Record<string, any> = {};
+      if (exists.category === 'news' && category !== 'news') updateData.category = category;
+      // Update publishedAt if incoming date is more recent
+      if (publishedAt && !isNaN(publishedAt.getTime())) {
+        const existingTs = exists.publishedAt ? new Date(exists.publishedAt).getTime() : 0;
+        if (publishedAt.getTime() > existingTs) updateData.publishedAt = publishedAt;
+      }
+      // Backfill missing image
+      if (imageUrl && !(exists as any).imageUrl) updateData.imageUrl = imageUrl;
+      if (Object.keys(updateData).length > 0) await this.repo.update(exists.id, updateData);
+    }
+  }
+
+  private scrapeOgImage(url: string): Promise<string | null> {
+    return new Promise((resolve) => {
+      const doRequest = (reqUrl: string, redirects = 0) => {
+        if (redirects > 5) { resolve(null); return; }
+        try {
+          const mod: typeof https = reqUrl.startsWith('https') ? require('https') : require('http');
+          const req = mod.get(reqUrl, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1)' } }, (res: any) => {
+            // Follow redirects (301/302/307/308)
+            if ([301, 302, 307, 308].includes(res.statusCode) && res.headers.location) {
+              const loc: string = res.headers.location;
+              const next = loc.startsWith('http') ? loc : new URL(loc, reqUrl).toString();
+              res.resume();
+              doRequest(next, redirects + 1);
+              return;
+            }
+            let html = '';
+            res.on('data', (c: Buffer) => { if (html.length < 80000) html += c.toString(); });
+            res.on('end', () => {
+              const m = html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)
+                     || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
+              resolve(m ? m[1] : null);
+            });
+            res.on('error', () => resolve(null));
+          });
+          req.on('error', () => resolve(null));
+          req.setTimeout(8000, () => { req.destroy(); resolve(null); });
+        } catch { resolve(null); }
+      };
+      doRequest(url);
+    });
+  }
+
+  private resolveRedirect(url: string): Promise<string> {
+    return new Promise((resolve) => {
+      const doReq = (reqUrl: string, hops = 0) => {
+        if (hops > 8 || !reqUrl) { resolve(url); return; }
+        try {
+          const mod: any = reqUrl.startsWith('https') ? require('https') : require('http');
+          const req = mod.get(reqUrl, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1)' } }, (res: any) => {
+            if ([301, 302, 307, 308].includes(res.statusCode) && res.headers.location) {
+              const loc: string = res.headers.location;
+              const next = loc.startsWith('http') ? loc : new URL(loc, reqUrl).toString();
+              res.resume();
+              doReq(next, hops + 1);
+            } else {
+              res.resume();
+              resolve(reqUrl);
+            }
+          });
+          req.on('error', () => resolve(url));
+          req.setTimeout(6000, () => { req.destroy(); resolve(url); });
+        } catch { resolve(url); }
+      };
+      doReq(url);
+    });
+  }
+
+  @Cron('0 */4 * * *')
+  async backfillMissingImages(): Promise<void> {
+    const noImg = await this.repo.find({ where: { imageUrl: null as any, isApproved: true }, take: 30 });
+    let count = 0;
+    for (const item of noImg) {
+      if (!item.sourceUrl || item.sourceUrl === 'https://www.meutimao.com.br') continue;
+      const img = await this.scrapeOgImage(item.sourceUrl);
+      if (img) { await this.repo.update(item.id, { imageUrl: img }); count++; }
+    }
+    if (count > 0) this.logger.log(`Backfilled images: ${count} news items updated`);
+  }
+
+
+  private fetchUrlRSS(url: string): Promise<string | null> {
+    return new Promise((resolve) => {
+      const mod: any = url.startsWith('https') ? require('https') : require('http');
+      mod.get(url, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0', 'Accept': 'application/rss+xml,text/xml,*/*' } }, (res: any) => {
+        const chunks: Buffer[] = [];
+        res.on("data", (c: Buffer) => chunks.push(c));
+        res.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+        res.on("error", () => resolve(null));
+      }).on("error", () => resolve(null));
+    });
+  }
+
+  private fetchRSS(): Promise<string | null> {
+    return new Promise((resolve) => {
+      https.get('https://www.meutimao.com.br/feed/', { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; FielBot/1.0)' } }, (res) => {
+        const chunks: Buffer[] = [];
+        res.on("data", (c: Buffer) => chunks.push(c));
+        res.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+        res.on('error', () => resolve(null));
+      }).on('error', () => resolve(null));
+    });
+  }
+
+  async getCuriosidades(): Promise<any[]> {
+    const now = new Date();
+    const records = await this.aiContentRepo.find({
+      where: { type: 'curiosidade', expiresAt: MoreThan(now) },
+      order: { generatedAt: 'DESC' },
+      take: 5,
+    });
+    if (records.length === 0) return [];
+    return records.flatMap((r) => (Array.isArray(r.contentJson) ? r.contentJson : [r.contentJson]));
+  }
+
+  findAll(limit = 20, page = 1) {
+    return this.repo.createQueryBuilder('n')
+      .where('n.is_approved = true AND n.is_deleted = false AND n.image_url IS NOT NULL')
+      .andWhere('(n.expires_at IS NULL OR n.expires_at > NOW())')
+      .andWhere("(n.category NOT IN ('news','transfer','oficial') OR COALESCE(n.published_at, n.fetched_at) > NOW() - INTERVAL '14 days')")
+      // Only show match_preview articles within 5 days of the match
+      .andWhere("(n.category != 'match_preview' OR COALESCE(n.published_at, n.fetched_at) BETWEEN NOW() - INTERVAL '2 days' AND NOW() + INTERVAL '5 days')")
+      // Exclude non-men's-football content that slips through title filters
+      .andWhere("n.title !~* 'feminino|feminina|futsal|basquete|nbb|sub-[0-9]|teal rising|jogadoras inscritas|emily lima|bravas'")
+      .orderBy('COALESCE(n.published_at, n.fetched_at)', 'DESC')
+      .take(limit).skip((page - 1) * limit).getMany();
+  }
+
+  async count(): Promise<{ total: number }> {
+    const total = await this.repo.count({ where: { isApproved: true, isDeleted: false } as any });
+    return { total };
+  }
+
+  async getHistory(opts: { page: number; limit: number; category?: string; q?: string }) {
+    const { page, limit, category, q } = opts;
+    const qb = this.repo.createQueryBuilder('n')
+      .where('n.is_approved = true AND n.is_deleted = false AND n.image_url IS NOT NULL')
+      .andWhere('(n.expires_at IS NULL OR n.expires_at > NOW())')
+      .orderBy('COALESCE(n.published_at, n.fetched_at)', 'DESC')
+      .take(limit)
+      .skip((page - 1) * limit);
+    if (category) {
+      qb.andWhere('n.category = :cat', { cat: category });
+      if (['news','transfer','oficial'].includes(category)) {
+        qb.andWhere("COALESCE(n.published_at, n.fetched_at) > NOW() - INTERVAL '14 days'");
+      }
+    }
+    if (q) qb.andWhere('(LOWER(n.title) LIKE :q OR LOWER(n.summary) LIKE :q)', { q: '%' + q.toLowerCase() + '%' });
+    // Always exclude non-men's content
+    qb.andWhere("n.title !~* 'feminino|feminina|futsal|basquete|nbb|sub-[0-9]|teal rising|jogadoras inscritas|emily lima|bravas'");
+    const [items, total] = await qb.getManyAndCount();
+    return { items, total, page, limit, pages: Math.ceil(total / limit) };
+  }
+
+  findByCategory(category: string, limit = 20, page = 1) {
+    const qb = this.repo.createQueryBuilder('n')
+      .where('n.is_approved = true AND n.is_deleted = false AND n.image_url IS NOT NULL')
+      .andWhere('n.category = :cat', { cat: category })
+      .andWhere('(n.expires_at IS NULL OR n.expires_at > NOW())')
+      // Exclude non-men's-football content regardless of category
+      .andWhere("n.title !~* 'feminino|feminina|futsal|basquete|nbb|sub-[0-9]|teal rising|jogadoras inscritas|emily lima|bravas'")
+      .orderBy('COALESCE(n.published_at, n.fetched_at)', 'DESC')
+      .take(limit).skip((page - 1) * limit);
+    if (['news','transfer','oficial'].includes(category)) {
+      qb.andWhere("COALESCE(n.published_at, n.fetched_at) > NOW() - INTERVAL '14 days'");
+    }
+    if (category === 'match_preview') {
+      qb.andWhere("COALESCE(n.published_at, n.fetched_at) BETWEEN NOW() - INTERVAL '2 days' AND NOW() + INTERVAL '5 days'");
+    }
+    return qb.getMany();
+  }
+
+  findById(id: string) {
+    return this.repo.findOne({ where: { id, isApproved: true, isDeleted: false } as any });
+  }
+}

@@ -1,0 +1,138 @@
+import { Injectable, NotFoundException, ForbiddenException } from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Repository } from "typeorm";
+import { Caravan }      from "../database/entities/caravan.entity";
+import { CaravanPhoto } from "../database/entities/caravan-photo.entity";
+import { GalleryPhoto } from "../database/entities/gallery-photo.entity";
+import { CreateCaravanDto } from "./dto/create-caravan.dto";
+
+@Injectable()
+export class CaravansService {
+  constructor(
+    @InjectRepository(Caravan)      private caravanRepo:  Repository<Caravan>,
+    @InjectRepository(CaravanPhoto) private photoRepo:    Repository<CaravanPhoto>,
+    @InjectRepository(GalleryPhoto) private galleryRepo:  Repository<GalleryPhoto>,
+  ) {}
+
+  // ── Caravans ─────────────────────────────────────────────────
+  async findAll(status?: string) {
+    const qb = this.caravanRepo.createQueryBuilder("c")
+      .leftJoinAndSelect("c.creator", "creator")
+      .leftJoinAndSelect("c.match", "match")
+      .orderBy("c.departureDatetime", "ASC");
+    if (status) qb.where("c.status = :status", { status });
+    return qb.getMany();
+  }
+
+  async findOne(id: string) {
+    const c = await this.caravanRepo.findOne({
+      where: { id },
+      relations: ["creator", "match"],
+    });
+    if (!c) throw new NotFoundException("Caravana não encontrada");
+    const photos = await this.photoRepo.find({ where: { caravanId: id }, order: { createdAt: "ASC" } });
+    return { ...c, photos };
+  }
+
+  async create(dto: CreateCaravanDto, userId: string) {
+    const caravan = this.caravanRepo.create({
+      ...dto,
+      departureDatetime: new Date(dto.departureDatetime),
+      returnDatetime:    dto.returnDatetime ? new Date(dto.returnDatetime) : undefined,
+      createdBy: userId,
+      status: "open",
+    });
+    return this.caravanRepo.save(caravan);
+  }
+
+  async update(id: string, dto: Partial<CreateCaravanDto>) {
+    const caravan = await this.caravanRepo.findOne({ where: { id } });
+    if (!caravan) throw new NotFoundException("Caravana não encontrada");
+    if (dto.departureDatetime) dto.departureDatetime = new Date(dto.departureDatetime).toISOString();
+    Object.assign(caravan, dto);
+    return this.caravanRepo.save(caravan);
+  }
+
+  async remove(id: string) {
+    await this.caravanRepo.delete(id);
+    return { message: "Caravana removida" };
+  }
+
+  async addPhoto(
+    caravanId: string, url: string, caption: string, uploadedBy: string, isFeatured = false,
+    originalName?: string, fileSizeBytes?: number, compressedSizeBytes?: number,
+  ) {
+    const photo = this.photoRepo.create({
+      caravanId, url, caption, uploadedBy, isFeatured,
+      ...(originalName ? { originalName } : {}),
+      ...(fileSizeBytes ? { fileSizeBytes } : {}),
+      ...(compressedSizeBytes ? { compressedSizeBytes } : {}),
+    } as any);
+    return this.photoRepo.save(photo);
+  }
+
+  async removePhoto(photoId: string) {
+    await this.photoRepo.delete(photoId);
+    return { message: "Foto removida" };
+  }
+
+  async removePhotoWithFile(photoId: string) {
+    const photo = await this.photoRepo.findOne({ where: { id: photoId } });
+    if (photo) {
+      // Delete file from disk
+      const filePath = "/app" + photo.url;
+      try {
+        const { unlinkSync, existsSync } = require("fs");
+        if (existsSync(filePath)) unlinkSync(filePath);
+      } catch {}
+      await this.photoRepo.delete(photoId);
+    }
+    return { message: "Foto removida" };
+  }
+
+  async updatePhotoCaption(photoId: string, caption: string) {
+    await this.photoRepo.update(photoId, { caption } as any);
+    return this.photoRepo.findOne({ where: { id: photoId } });
+  }
+
+  async togglePhotoFeatured(photoId: string) {
+    const photo = await this.photoRepo.findOne({ where: { id: photoId } });
+    if (!photo) throw new Error("Foto não encontrada");
+    await this.photoRepo.update(photoId, { isFeatured: !photo.isFeatured } as any);
+    return { isFeatured: !photo.isFeatured };
+  }
+
+  async getCaravanPhotos(caravanId: string) {
+    return this.photoRepo.find({
+      where: { caravanId },
+      order: { createdAt: "ASC" },
+    });
+  }
+
+  // ── Gallery ───────────────────────────────────────────────────
+  async getGallery(category?: string, featuredOnly = false) {
+    const qb = this.galleryRepo.createQueryBuilder("g")
+      .leftJoinAndSelect("g.uploader", "uploader")
+      .orderBy("g.createdAt", "DESC");
+    if (category) qb.andWhere("g.category = :category", { category });
+    if (featuredOnly) qb.andWhere("g.isFeatured = true");
+    return qb.getMany();
+  }
+
+  async addGalleryPhoto(url: string, title: string, description: string, category: string, isFeatured: boolean, uploadedBy: string) {
+    const photo = this.galleryRepo.create({ url, title, description, category, isFeatured, uploadedBy });
+    return this.galleryRepo.save(photo);
+  }
+
+  async removeGalleryPhoto(id: string) {
+    await this.galleryRepo.delete(id);
+    return { message: "Foto removida" };
+  }
+
+  async toggleGalleryFeatured(id: string) {
+    const photo = await this.galleryRepo.findOne({ where: { id } });
+    if (!photo) throw new NotFoundException("Foto não encontrada");
+    photo.isFeatured = !photo.isFeatured;
+    return this.galleryRepo.save(photo);
+  }
+}

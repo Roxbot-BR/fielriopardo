@@ -1,0 +1,36 @@
+import { Controller, Get, Post, Put, Delete, Body, Param, Query } from "@nestjs/common";
+import { PlayersService } from "./players.service";
+import { Public } from "../common/decorators/public.decorator";
+import { Player } from "../database/entities/player.entity";
+
+@Controller("players")
+export class PlayersController {
+  constructor(private svc: PlayersService) {}
+
+  @Public()
+  @Get()
+  findAll(@Query("status") status?: string) {
+    return this.svc.findAll(status ?? "active");
+  }
+
+  @Public()
+  @Get(":id")
+  findOne(@Param("id") id: string) {
+    return this.svc.findById(id);
+  }
+
+  @Post()
+  create(@Body() dto: Partial<Player>) {
+    return this.svc.create(dto);
+  }
+
+  @Put(":id")
+  update(@Param("id") id: string, @Body() dto: Partial<Player>) {
+    return this.svc.update(id, dto);
+  }
+
+  @Delete(":id")
+  remove(@Param("id") id: string) {
+    return this.svc.remove(id);
+  }
+}

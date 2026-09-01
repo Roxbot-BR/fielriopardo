@@ -1,0 +1,221 @@
+import { Controller, Get, Post, Patch, Delete, Param, Body, Query, UseGuards, Request, UploadedFile, UploadedFiles, UseInterceptors } from "@nestjs/common";
+import { FileInterceptor, FilesInterceptor } from "@nestjs/platform-express";
+import { diskStorage, memoryStorage } from "multer";
+import { extname, join } from "path";
+import { existsSync, mkdirSync, writeFileSync, unlinkSync } from "fs";
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const sharp: any = require("sharp");
+import { CaravansService } from "./caravans.service";
+import { CreateCaravanDto } from "./dto/create-caravan.dto";
+import { JwtAuthGuard }  from "../common/guards/jwt-auth.guard";
+import { RolesGuard }    from "../common/guards/roles.guard";
+import { Roles }         from "../common/decorators/roles.decorator";
+
+@Controller("caravans")
+export class CaravansController {
+  constructor(private svc: CaravansService) {}
+
+  // ── PUBLIC ─────────────────────────────────────────────────
+  @Get()
+  getAll(@Query("status") status?: string) {
+    return this.svc.findAll(status);
+  }
+
+  @Get("gallery")
+  getGallery(@Query("category") cat?: string, @Query("featured") feat?: string) {
+    return this.svc.getGallery(cat, feat === "true");
+  }
+
+  @Get(":id")
+  getOne(@Param("id") id: string) {
+    return this.svc.findOne(id);
+  }
+
+  // ── ADMIN/MASTER ────────────────────────────────────────────
+  @Post("upload")
+  @UseGuards(JwtAuthGuard, RolesGuard) @Roles("ADMIN")
+  @UseInterceptors(FileInterceptor("file", {
+    storage: diskStorage({
+      destination: "/app/uploads/caravanas",
+      filename: (_req, file, cb) => {
+        const unique = Date.now() + "-" + Math.round(Math.random() * 1e9);
+        cb(null, unique + extname(file.originalname));
+      },
+    }),
+    limits: { fileSize: 5 * 1024 * 1024 },
+    fileFilter: (_req, file, cb) => {
+      cb(null, true);
+    },
+  }))
+  uploadImage(@UploadedFile() file: Express.Multer.File) {
+    return { url: "/uploads/caravanas/" + file.filename };
+  }
+
+  @Post("upload-gallery")
+  @UseGuards(JwtAuthGuard, RolesGuard) @Roles("ADMIN")
+  @UseInterceptors(FileInterceptor("file", {
+    storage: diskStorage({
+      destination: "/app/uploads/galeria",
+      filename: (_req, file, cb) => {
+        const unique = Date.now() + "-" + Math.round(Math.random() * 1e9);
+        cb(null, unique + extname(file.originalname));
+      },
+    }),
+    limits: { fileSize: 5 * 1024 * 1024 },
+    fileFilter: (_req, file, cb) => {
+      cb(null, true);
+    },
+  }))
+  uploadGalleryImage(@UploadedFile() file: Express.Multer.File) {
+    return { url: "/uploads/galeria/" + file.filename };
+  }
+
+  @Post("upload-gallery-multiple")
+  @UseGuards(JwtAuthGuard, RolesGuard) @Roles("ADMIN")
+  @UseInterceptors(FilesInterceptor("files", 100, {
+    storage: diskStorage({
+      destination: "/app/uploads/galeria",
+      filename: (_req, file, cb) => {
+        const unique = Date.now() + "-" + Math.round(Math.random() * 1e9);
+        cb(null, unique + extname(file.originalname));
+      },
+    }),
+    limits: { fileSize: 5 * 1024 * 1024 },
+    fileFilter: (_req, file, cb) => {
+      cb(null, true);
+    },
+  }))
+  uploadGalleryMultiple(@UploadedFiles() files: Express.Multer.File[]) {
+    return { urls: files.map(f => "/uploads/galeria/" + f.filename) };
+  }
+
+  // ── PHOTO BANK — single or batch upload with auto-compression ──
+  @Post(":id/photos/upload")
+  @UseGuards(JwtAuthGuard, RolesGuard) @Roles("ADMIN")
+  @UseInterceptors(FilesInterceptor("files", 200, {
+    storage: memoryStorage(),
+    limits: { fileSize: 50 * 1024 * 1024 }, // 50MB max raw (will compress)
+    fileFilter: (_req, file, cb) => {
+      if (/^image\/(jpeg|jpg|png|gif|webp|heic|heif)$/i.test(file.mimetype)) cb(null, true);
+      else cb(null, false);
+    },
+  }))
+  async uploadPhotos(
+    @Param("id") caravanId: string,
+    @UploadedFiles() files: Express.Multer.File[],
+    @Request() req: any,
+  ) {
+    const uploadDir = "/app/uploads/caravanas/fotos";
+    if (!existsSync(uploadDir)) mkdirSync(uploadDir, { recursive: true });
+    const results: any[] = [];
+    for (const file of files) {
+      const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+      const filename = `${unique}.jpg`;
+      const filepath = join(uploadDir, filename);
+      const originalSize = file.buffer.length;
+      let finalBuffer = file.buffer;
+      let compressedSize = originalSize;
+      // Auto-compress if > 3MB
+      if (originalSize > 3 * 1024 * 1024) {
+        finalBuffer = await sharp(file.buffer)
+          .rotate() // auto-orient from EXIF
+          .resize({ width: 1920, height: 1920, fit: "inside", withoutEnlargement: true })
+          .jpeg({ quality: 82, progressive: true })
+          .toBuffer();
+        compressedSize = finalBuffer.length;
+      } else {
+        // Still process through sharp for orientation fix and consistent format
+        finalBuffer = await sharp(file.buffer)
+          .rotate()
+          .jpeg({ quality: 92, progressive: true })
+          .toBuffer();
+        compressedSize = finalBuffer.length;
+      }
+      writeFileSync(filepath, finalBuffer);
+      const url = `/uploads/caravanas/fotos/${filename}`;
+      const photo = await this.svc.addPhoto(
+        caravanId, url, "", req.user.id, false,
+        file.originalname, originalSize, compressedSize,
+      );
+      results.push({ ...photo, originalSize, compressedSize, wasCompressed: originalSize > 3 * 1024 * 1024 });
+    }
+    return { uploaded: results.length, photos: results };
+  }
+
+  @Delete(":id/photos/:photoId")
+  @UseGuards(JwtAuthGuard, RolesGuard) @Roles("ADMIN")
+  async removeCaravanPhoto(@Param("id") _id: string, @Param("photoId") photoId: string) {
+    return this.svc.removePhotoWithFile(photoId);
+  }
+
+  @Patch(":id/photos/:photoId/caption")
+  @UseGuards(JwtAuthGuard, RolesGuard) @Roles("ADMIN")
+  async updateCaption(
+    @Param("photoId") photoId: string,
+    @Body() b: { caption: string },
+  ) {
+    return this.svc.updatePhotoCaption(photoId, b.caption);
+  }
+
+  @Patch(":id/photos/:photoId/featured")
+  @UseGuards(JwtAuthGuard, RolesGuard) @Roles("ADMIN")
+  async togglePhotoFeatured(@Param("photoId") photoId: string) {
+    return this.svc.togglePhotoFeatured(photoId);
+  }
+
+  @Post()
+  @UseGuards(JwtAuthGuard, RolesGuard) @Roles("ADMIN")
+  create(@Body() dto: CreateCaravanDto, @Request() req: any) {
+    return this.svc.create(dto, req.user.id);
+  }
+
+  @Patch(":id")
+  @UseGuards(JwtAuthGuard, RolesGuard) @Roles("ADMIN")
+  update(@Param("id") id: string, @Body() dto: Partial<CreateCaravanDto>) {
+    return this.svc.update(id, dto);
+  }
+
+  @Delete(":id")
+  @UseGuards(JwtAuthGuard, RolesGuard) @Roles("ADMIN")
+  remove(@Param("id") id: string) {
+    return this.svc.remove(id);
+  }
+
+  @Post(":id/photos")
+  @UseGuards(JwtAuthGuard, RolesGuard) @Roles("ADMIN")
+  addPhoto(
+    @Param("id") id: string,
+    @Body() b: { url: string; caption?: string; isFeatured?: boolean },
+    @Request() req: any,
+  ) {
+    return this.svc.addPhoto(id, b.url, b.caption ?? "", req.user.id, b.isFeatured ?? false);
+  }
+
+  @Delete("photos/:photoId")
+  @UseGuards(JwtAuthGuard, RolesGuard) @Roles("ADMIN")
+  removePhoto(@Param("photoId") photoId: string) {
+    return this.svc.removePhoto(photoId);
+  }
+
+  @Post("gallery")
+  @UseGuards(JwtAuthGuard, RolesGuard) @Roles("ADMIN")
+  addGalleryPhoto(
+    @Body() b: { url: string; title?: string; description?: string; category?: string; isFeatured?: boolean },
+    @Request() req: any,
+  ) {
+    return this.svc.addGalleryPhoto(b.url, b.title ?? "", b.description ?? "", b.category ?? "geral", b.isFeatured ?? false, req.user.id);
+  }
+
+  @Delete("gallery/:id")
+  @UseGuards(JwtAuthGuard, RolesGuard) @Roles("ADMIN")
+  removeGalleryPhoto(@Param("id") id: string) {
+    return this.svc.removeGalleryPhoto(id);
+  }
+
+  @Patch("gallery/:id/featured")
+  @UseGuards(JwtAuthGuard, RolesGuard) @Roles("ADMIN")
+  toggleFeatured(@Param("id") id: string) {
+    return this.svc.toggleGalleryFeatured(id);
+  }
+}

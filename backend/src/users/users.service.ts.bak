@@ -1,0 +1,174 @@
+import * as bcrypt from "bcrypt";
+import { Injectable, NotFoundException, BadRequestException, UnauthorizedException, ConflictException } from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Repository } from "typeorm";
+import { User } from "../database/entities/user.entity";
+import { Role } from "../database/entities/role.entity";
+import { UpdateUserDto } from "./dto/update-user.dto";
+
+@Injectable()
+export class UsersService {
+  constructor(
+    @InjectRepository(User) private usersRepo: Repository<User>,
+    @InjectRepository(Role) private rolesRepo: Repository<Role>,
+  ) {}
+
+  static normalizePhone(phone: string): string {
+    return (phone ?? '').replace(/\D/g, '');
+  }
+
+  async findAll(): Promise<User[]> {
+    return this.usersRepo.find({ relations: ["roles", "roles.permissions"] });
+  }
+
+  async findById(id: string): Promise<User | null> {
+    return this.usersRepo.findOne({ where: { id }, relations: ["roles", "roles.permissions"] });
+  }
+
+  async findByEmail(email: string): Promise<User | null> {
+    return this.usersRepo.findOne({ where: { email }, relations: ["roles", "roles.permissions"] });
+  }
+
+  async findByNick(nick: string): Promise<User | null> {
+    return this.usersRepo.findOne({ where: { nick } });
+  }
+
+  async findByWhatsapp(whatsapp: string, excludeId?: string): Promise<User | null> {
+    const normalized = UsersService.normalizePhone(whatsapp);
+    if (!normalized || normalized.length < 10) return null;
+    const query = `SELECT id FROM users WHERE REGEXP_REPLACE(COALESCE(whatsapp, ''), '[^0-9]', '', 'g') = $1${excludeId ? ' AND id != $2' : ''} LIMIT 1`;
+    const params = excludeId ? [normalized, excludeId] : [normalized];
+    const rows = await this.usersRepo.query(query, params);
+    if (rows.length === 0) return null;
+    return this.findById(rows[0].id);
+  }
+
+  async findPotentialDuplicates(): Promise<Array<{ user1: object; user2: object; reason: string }>> {
+    const whatsappDups = await this.usersRepo.query(`
+      SELECT a.id as id1, a.nick as nick1, a.full_name as name1, a.email as email1,
+             a.whatsapp as wa1, a.city as city1, a.is_active as active1, a.created_at as created1,
+             b.id as id2, b.nick as nick2, b.full_name as name2, b.email as email2,
+             b.whatsapp as wa2, b.city as city2, b.is_active as active2, b.created_at as created2,
+             'WhatsApp duplicado' as reason
+      FROM users a
+      JOIN users b ON a.id < b.id
+      WHERE REGEXP_REPLACE(COALESCE(a.whatsapp, ''), '[^0-9]', '', 'g') =
+            REGEXP_REPLACE(COALESCE(b.whatsapp, ''), '[^0-9]', '', 'g')
+        AND LENGTH(REGEXP_REPLACE(COALESCE(a.whatsapp, ''), '[^0-9]', '', 'g')) >= 10
+    `);
+
+    const nameDups = await this.usersRepo.query(`
+      SELECT a.id as id1, a.nick as nick1, a.full_name as name1, a.email as email1,
+             a.whatsapp as wa1, a.city as city1, a.is_active as active1, a.created_at as created1,
+             b.id as id2, b.nick as nick2, b.full_name as name2, b.email as email2,
+             b.whatsapp as wa2, b.city as city2, b.is_active as active2, b.created_at as created2,
+             'Nome completo idêntico' as reason
+      FROM users a
+      JOIN users b ON a.id < b.id
+      WHERE LOWER(TRIM(COALESCE(a.full_name, ''))) = LOWER(TRIM(COALESCE(b.full_name, '')))
+        AND LENGTH(TRIM(COALESCE(a.full_name, ''))) > 4
+    `);
+
+    const seen = new Set<string>();
+    const results: Array<{ user1: object; user2: object; reason: string }> = [];
+
+    for (const row of [...whatsappDups, ...nameDups]) {
+      const key = `${row.id1}-${row.id2}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const combinedReason = [...whatsappDups, ...nameDups]
+        .filter(r => r.id1 === row.id1 && r.id2 === row.id2)
+        .map((r: any) => r.reason)
+        .filter((v: string, i: number, a: string[]) => a.indexOf(v) === i)
+        .join(' + ');
+      results.push({
+        user1: { id: row.id1, nick: row.nick1, fullName: row.name1, email: row.email1, whatsapp: row.wa1, city: row.city1, isActive: row.active1, createdAt: row.created1 },
+        user2: { id: row.id2, nick: row.nick2, fullName: row.name2, email: row.email2, whatsapp: row.wa2, city: row.city2, isActive: row.active2, createdAt: row.created2 },
+        reason: combinedReason,
+      });
+    }
+
+    return results;
+  }
+
+  async create(data: Partial<User>): Promise<User> {
+    const user = this.usersRepo.create(data);
+    const userRole = await this.rolesRepo.findOne({ where: { name: "USER" } });
+    if (userRole) user.roles = [userRole];
+    return this.usersRepo.save(user);
+  }
+
+  async update(id: string, dto: UpdateUserDto & { email?: string; password?: string; birthDate?: string; isActive?: boolean; role?: string }): Promise<User> {
+    const user = await this.usersRepo.findOne({ where: { id }, relations: ["roles"] });
+    if (!user) throw new NotFoundException("User not found");
+    if (dto.fullName !== undefined) user.fullName = dto.fullName;
+    if (dto.nick !== undefined) user.nick = dto.nick;
+    if (dto.email !== undefined) user.email = dto.email;
+    if (dto.whatsapp !== undefined) user.whatsapp = dto.whatsapp;
+    if (dto.city !== undefined) user.city = dto.city;
+    if (dto.state !== undefined) user.state = dto.state;
+    if (dto.birthDate !== undefined) user.birthDate = dto.birthDate;
+    if (dto.isActive !== undefined) user.isActive = dto.isActive;
+    if (dto.avatarUrl !== undefined) user.avatarUrl = dto.avatarUrl;
+    if (dto.notifyBolaoOpen !== undefined) user.notifyBolaoOpen = dto.notifyBolaoOpen;
+    if (dto.notifyBolaoClose !== undefined) user.notifyBolaoClose = dto.notifyBolaoClose;
+    if (dto.notifyRanking !== undefined) user.notifyRanking = dto.notifyRanking;
+    if ((dto as any).notifyBirthday !== undefined) user.notifyBirthday = (dto as any).notifyBirthday;
+    if (dto.password) {
+      user.passwordHash = await bcrypt.hash(dto.password, 10);
+    }
+    await this.usersRepo.save(user);
+    if (dto.role) {
+      await this.assignRole(id, dto.role);
+      return this.findById(id) as Promise<User>;
+    }
+    return this.findById(id) as Promise<User>;
+  }
+
+  async updateNick(id: string, nick: string): Promise<User> {
+    if (!nick || nick.trim().length < 2) throw new BadRequestException("Nick too short");
+    const existing = await this.usersRepo.query(
+      `SELECT id FROM users WHERE LOWER(nick) = LOWER($1) AND id != $2 LIMIT 1`,
+      [nick, id]
+    );
+    if (existing.length > 0) throw new ConflictException("Nick already taken");
+    const user = await this.findById(id);
+    if (!user) throw new NotFoundException("User not found");
+    user.nick = nick.trim();
+    return this.usersRepo.save(user);
+  }
+
+  async assignRole(userId: string, roleName: string): Promise<User> {
+    const user = await this.findById(userId);
+    if (!user) throw new NotFoundException("User not found");
+    const role = await this.rolesRepo.findOne({ where: { name: roleName } });
+    if (!role) throw new NotFoundException("Role not found: " + roleName);
+    user.roles = [role];
+    return this.usersRepo.save(user);
+  }
+
+  async toggleActive(id: string): Promise<User> {
+    const user = await this.findById(id);
+    if (!user) throw new NotFoundException("User not found");
+    user.isActive = !user.isActive;
+    return this.usersRepo.save(user);
+  }
+
+  async count(): Promise<number> {
+    return this.usersRepo.count();
+  }
+
+  async changePassword(userId: string, currentPassword: string, newPassword: string): Promise<void> {
+    const user = await this.usersRepo.findOne({ where: { id: userId }, select: ["id", "passwordHash"] });
+    if (!user) throw new NotFoundException("User not found");
+    const valid = await bcrypt.compare(currentPassword, user.passwordHash);
+    if (!valid) throw new UnauthorizedException("Senha atual incorreta");
+    user.passwordHash = await bcrypt.hash(newPassword, 12);
+    await this.usersRepo.save(user);
+  }
+
+  async countActive(): Promise<{ total: number }> {
+    const total = await this.usersRepo.count({ where: { isActive: true } });
+    return { total };
+  }
+}

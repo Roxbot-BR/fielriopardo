@@ -1,0 +1,29 @@
+# Node dependencies
+node_modules/
+**/node_modules/
+
+# Build outputs
+.next/
+**/.next/
+dist/
+**/dist/
+build/
+**/build/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+logs/
+
+# Uploads & Backups
+uploads/
+backups/
+*-backup-*
+
+# Misc
+.DS_Store
+*.pem

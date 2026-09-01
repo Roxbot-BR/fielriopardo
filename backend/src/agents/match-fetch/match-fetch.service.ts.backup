@@ -1,0 +1,542 @@
+import { Injectable, Logger } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository, Between } from 'typeorm';
+import { Cron } from '@nestjs/schedule';
+import * as https from 'https';
+import { Match, Competition, MatchStatus } from '../../database/entities/match.entity';
+import { BolaoAgentService } from '../bolao-agent/bolao-agent.service';
+import { SettingsService } from '../../settings/settings.service';
+import { AuditService } from '../../audit/audit.service';
+import { TeamLogosService } from '../../team-logos/team-logos.service';
+import { getTeamLogo } from './espn-logos';
+import { getWikimediaLogo } from './wikimedia-logos';
+import { detectBroadcast, resolveStreamUrl, normalizeChannelList, scrapeBroadcastInfo, resolveAllBroadcastUrls } from './broadcast-utils';
+import { scrapeMeutimaoMatches } from './puppeteer-meutimao';
+
+function mapCompetition(championship: string): Competition {
+  const c = (championship || '').toLowerCase();
+  if (c.includes('brasileirao') || c.includes('serie a') || c.includes('brasileiro') || c.includes('bra.1')) return Competition.BRASILEIRAO;
+  if (c.includes('copa do brasil') || c.includes('copa_do_brasil')) return Competition.COPA_DO_BRASIL;
+  if (c.includes('libertadores')) return Competition.LIBERTADORES;
+  if (c.includes('sulamericana') || c.includes('sul-americana') || c.includes('sudamericana')) return Competition.SULAMERICANA;
+  if (c.includes('paulista') || c.includes('paulistao')) return Competition.PAULISTAO;
+  if (c.includes('amistoso') || c.includes('friendly')) return Competition.FRIENDLY;
+  return Competition.OTHER;
+}
+
+const ESPN_COMPETITIONS = [
+  { slug: 'bra.1', name: 'Brasileirao Serie A' },
+  { slug: 'bra.copa_do_brazil', name: 'Copa do Brasil' },
+  { slug: 'conmebol.libertadores', name: 'Copa Libertadores' },
+  { slug: 'conmebol.sudamericana', name: 'Copa Sul-Americana' },
+];
+
+const CORINTHIANS_TEAM_ID = '874';
+
+function normalizeTeamName(name: string): string {
+  return (name || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\b(fc|sc|ec|ac|clube|club|futebol|sport|sociedade)\b/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function sameTeam(a: string, b: string): boolean {
+  const left = normalizeTeamName(a);
+  const right = normalizeTeamName(b);
+  if (!left || !right) return false;
+  return left === right || left.includes(right) || right.includes(left);
+}
+
+@Injectable()
+export class MatchFetchService {
+  private readonly logger = new Logger(MatchFetchService.name);
+
+  constructor(
+    @InjectRepository(Match) private matchesRepo: Repository<Match>,
+    private settings: SettingsService,
+    private audit: AuditService,
+    private bolaoAgent: BolaoAgentService,
+    private teamLogosService: TeamLogosService,
+  ) {}
+
+  @Cron('0 9 * * 1')
+  async fetchUpcomingMatches(): Promise<void> {
+    this.logger.log('Buscando proximos jogos do Corinthians...');
+    try {
+      const espnCount = await this.fetchFromESPN();
+      if (espnCount > 0) {
+        this.logger.log('ESPN: ' + espnCount + ' jogos processados');
+        await this.audit.log(null, 'AGENT_RUN', 'AGENT', 'matches: ' + espnCount + ' jogos processados via ESPN').catch(() => {});
+        return;
+      }
+      this.logger.log('ESPN sem resultados, tentando fallback meutimao...');
+      await this.fetchFromMeutimao();
+      await this.audit.log(null, 'AGENT_RUN', 'AGENT', 'matches: busca de jogos concluida via meutimao').catch(() => {});
+    } catch (err) {
+      this.logger.error('Erro ao buscar proximos jogos', err);
+      await this.audit.log(null, 'AGENT_ERROR', 'AGENT', 'matches: ' + String((err as any)?.message || err).slice(0, 100)).catch(() => {});
+    }
+  }
+
+  async triggerFetch(): Promise<void> {
+    return this.fetchUpcomingMatches();
+  }
+
+  async fetchMatchLogoFromESPN(homeTeam: string, awayTeam: string): Promise<{ homeTeamLogo?: string; awayTeamLogo?: string }> {
+    let homeLogo = await this.teamLogosService.getLogoByTeamName(homeTeam);
+    let awayLogo = await this.teamLogosService.getLogoByTeamName(awayTeam);
+    if (homeLogo && awayLogo) {
+      this.logger.log("Logos from cache: " + homeTeam + ", " + awayTeam);
+      return { homeTeamLogo: homeLogo, awayTeamLogo: awayLogo };
+    }
+    if (!homeLogo) homeLogo = getTeamLogo(homeTeam);
+    if (!awayLogo) awayLogo = getTeamLogo(awayTeam);
+    if (homeLogo) await this.teamLogosService.saveTeamLogo(homeTeam, homeLogo, "auto", true).catch(() => {});
+    if (awayLogo) await this.teamLogosService.saveTeamLogo(awayTeam, awayLogo, "auto", true).catch(() => {});
+    if (homeLogo && awayLogo) return { homeTeamLogo: homeLogo, awayTeamLogo: awayLogo };
+    try {
+      const now = new Date();
+      const dateKey = String(now.getFullYear()) + String(now.getMonth() + 1).padStart(2, '0') + '01';
+      const url = 'https://site.api.espn.com/apis/site/v2/sports/soccer/bra.1/scoreboard?dates=' + dateKey;
+      const raw = await this.fetchUrl(url);
+      if (raw) {
+        const data = JSON.parse(raw);
+        for (const event of (data?.events ?? [])) {
+          const comp = event.competitions?.[0];
+          if (!comp) continue;
+          for (const competitor of (comp.competitors ?? [])) {
+            const name = (competitor.team?.displayName ?? '').toLowerCase();
+            if (!homeLogo && (name.includes(homeTeam.toLowerCase()) || homeTeam.toLowerCase().includes(name)) && competitor.team?.logo)
+              homeLogo = competitor.team.logo;
+            if (!awayLogo && (name.includes(awayTeam.toLowerCase()) || awayTeam.toLowerCase().includes(name)) && competitor.team?.logo)
+              awayLogo = competitor.team.logo;
+          }
+        }
+      }
+    } catch (e) { this.logger.warn('Erro ao buscar logo ESPN: ' + String(e)); }
+    
+    // Fallback para Wikimedia Commons se não encontrou na ESPN
+    if (!homeLogo) {
+      homeLogo = getWikimediaLogo(homeTeam);
+      if (homeLogo) this.logger.log(`Logo Wikimedia encontrado para ${homeTeam}`);
+    }
+    if (!awayLogo) {
+      awayLogo = getWikimediaLogo(awayTeam);
+      if (awayLogo) this.logger.log(`Logo Wikimedia encontrado para ${awayTeam}`);
+    }
+    
+    return { homeTeamLogo: homeLogo, awayTeamLogo: awayLogo };
+  }
+
+  async fetchFromESPN(): Promise<number> {
+    const now = new Date();
+    const season = String(now.getFullYear());
+    let processed = 0;
+    const allUrls: Array<{ url: string; championship: string }> = [];
+
+    // 1. Team schedule for ALL competitions - discovers new cup matches as team advances
+    for (const comp of ESPN_COMPETITIONS) {
+      allUrls.push({
+        url: 'https://site.api.espn.com/apis/site/v2/sports/soccer/' + comp.slug + '/teams/' + CORINTHIANS_TEAM_ID + '/schedule?season=' + season,
+        championship: comp.name,
+      });
+    }
+
+    // 2. Date-based scoreboards only for known match dates + next 14 days
+    const dbMatches = await this.matchesRepo.find({ where: { season } });
+    const dateKeys = new Set<string>();
+    for (const m of dbMatches) {
+      if (m.matchDate) {
+        const d = new Date(m.matchDate);
+        for (const offset of [-1, 0, 1]) {
+          const d2 = new Date(d);
+          d2.setDate(d2.getDate() + offset);
+          dateKeys.add(this.formatDateKey(d2));
+        }
+      }
+    }
+    for (let i = 0; i < 14; i++) {
+      const d = new Date(now);
+      d.setDate(d.getDate() + i);
+      dateKeys.add(this.formatDateKey(d));
+    }
+    for (const dateKey of dateKeys) {
+      for (const comp of ESPN_COMPETITIONS) {
+        allUrls.push({
+          url: 'https://site.api.espn.com/apis/site/v2/sports/soccer/' + comp.slug + '/scoreboard?dates=' + dateKey,
+          championship: comp.name,
+        });
+      }
+    }
+
+    this.logger.log('ESPN: ' + allUrls.length + ' URLs (' + ESPN_COMPETITIONS.length + ' schedules + ' + dateKeys.size + ' datas)');
+
+    // Scrape meutimao once per run for PRECISE per-game broadcast channels.
+    // ESPN rarely returns broadcasts for Brazilian games (Copa do Brasil etc.),
+    // so this avoids falling back to the generic per-competition rights list.
+    const meutimaoBroadcasts: { home: string; away: string; tv: string }[] = [];
+    try {
+      const meuMatches = await scrapeMeutimaoMatches();
+      for (const mm of meuMatches) {
+        if (!mm.tvChannels || mm.tvChannels.length === 0) continue;
+        meutimaoBroadcasts.push({ home: mm.homeTeam, away: mm.awayTeam, tv: normalizeChannelList(mm.tvChannels) });
+      }
+      this.logger.log('Meutimao: ' + meutimaoBroadcasts.length + ' jogos com transmissao');
+    } catch (e: any) {
+      this.logger.warn('Meutimao broadcast scrape falhou: ' + (e?.message || String(e)));
+    }
+
+    // Resolve specific stream links per event (Cazé TV / GOAT / YouTube -> exact
+    // youtube.com/live/<id>, others -> canonical channel URL). Cached by event id
+    // to avoid repeated YouTube lookups across duplicate occurrences.
+    const streamCache = new Map<string, { primary?: string; urls: Record<string, string> }>();
+    const getStreamData = async (
+      extId: string, tv: string, h: string, a: string,
+    ): Promise<{ primary?: string; urls: Record<string, string> }> => {
+      if (!tv) return { primary: undefined, urls: {} };
+      const cached = streamCache.get(extId);
+      if (cached) return cached;
+      let urls: Record<string, string> = {};
+      try { urls = await resolveAllBroadcastUrls(tv, h, a); } catch { urls = {}; }
+      const firstCh = tv.split(/\s*\/\s*/).map((s) => s.trim()).find((ch) => urls[ch]);
+      const primary = firstCh ? urls[firstCh] : (await resolveStreamUrl(tv, '') || undefined);
+      const data = { primary, urls };
+      streamCache.set(extId, data);
+      return data;
+    };
+
+    const seenEventIds = new Set<string>();
+
+    for (const { url, championship: champOverride } of allUrls) {
+      const raw = await this.fetchUrl(url);
+      if (!raw) continue;
+      let data: any;
+      try { data = JSON.parse(raw); } catch { continue; }
+
+      const events: any[] = data?.events ?? data?.team?.events ?? [];
+      for (const event of events) {
+        const comp = event.competitions?.[0];
+        if (!comp) continue;
+        const competitors: any[] = comp.competitors ?? [];
+        const homeComp = competitors.find((c: any) => c.homeAway === 'home');
+        const awayComp = competitors.find((c: any) => c.homeAway === 'away');
+        if (!homeComp || !awayComp) continue;
+
+        const homeTeam: string = homeComp.team?.displayName ?? '';
+        const awayTeam: string = awayComp.team?.displayName ?? '';
+        const isCorinthians = homeTeam.toLowerCase().includes('corinthians') || awayTeam.toLowerCase().includes('corinthians');
+        if (!isCorinthians) continue;
+
+        const homeTeamLogo: string = homeComp.team?.logo ?? getTeamLogo(homeTeam) ?? '';
+        const awayTeamLogo: string = awayComp.team?.logo ?? getTeamLogo(awayTeam) ?? '';
+        const matchDate = new Date(event.date);
+        if (isNaN(matchDate.getTime())) continue;
+
+        const venueFullName: string = comp.venue?.fullName ?? '';
+        const venueCity: string = comp.venue?.address?.city ?? '';
+        const venueCountry: string = comp.venue?.address?.country ?? '';
+        // Strip city/country from fullName if ESPN appended them
+        const stadium: string = venueFullName
+          .replace(new RegExp(`,?\\s*${venueCity}.*$`), '')
+          .trim() || venueFullName;
+        const city: string = venueCity
+          ? (venueCountry ? `${venueCity}, ${venueCountry}` : venueCity)
+          : '';
+        const leagueName: string = champOverride || (comp?.tournament?.displayName ?? event.league?.abbreviation ?? 'Brasileirao Serie A');
+        const championship = leagueName || 'Brasileirao Serie A';
+        const broadcasts: any[] = comp.broadcasts ?? [];
+        const espnBroadcastNames = broadcasts.flatMap((b: any) => b.names ?? []);
+        let tvChannel: string = normalizeChannelList(espnBroadcastNames);
+        // true when the channel came from a real per-game source (not the
+        // generic per-competition rights list), so we may overwrite stale data.
+        let preciseBroadcast = tvChannel.length > 0;
+        if (!tvChannel) {
+          const meu = meutimaoBroadcasts.find(
+            (x) => x.tv && sameTeam(x.home, homeTeam) && sameTeam(x.away, awayTeam),
+          );
+          if (meu) { tvChannel = meu.tv; preciseBroadcast = true; }
+        }
+        if (!tvChannel) {
+          const scraped = await scrapeBroadcastInfo(homeTeam, awayTeam, championship);
+          if (scraped) { tvChannel = scraped; preciseBroadcast = true; }
+          else { const bc = detectBroadcast(mapCompetition(championship).toString()); tvChannel = bc.tv; }
+        }
+        const { primary: streamPrimary, urls: broadcastUrlMap } =
+          await getStreamData('espn_' + String(event.id), tvChannel, homeTeam, awayTeam);
+        const roundNumber: number = event.week?.number ?? comp.week ?? 0;
+        const roundLabel: string = roundNumber ? 'Rodada ' + roundNumber : '';
+        const externalId = 'espn_' + String(event.id);
+        if (seenEventIds.has(externalId)) continue;
+
+        const espnStatus = event.competitions?.[0]?.status?.type?.name ?? '';
+        let mappedStatus: string = MatchStatus.SCHEDULED;
+        if (['STATUS_FULL_TIME','STATUS_FINAL','STATUS_FULL_PEN'].includes(espnStatus)) mappedStatus = MatchStatus.FINISHED;
+        else if (['STATUS_SECOND_HALF','STATUS_FIRST_HALF','STATUS_HALFTIME','STATUS_IN_PROGRESS','STATUS_EXTRA_TIME'].includes(espnStatus)) mappedStatus = MatchStatus.LIVE;
+        else if (['STATUS_POSTPONED'].includes(espnStatus)) mappedStatus = MatchStatus.POSTPONED;
+        else if (['STATUS_CANCELED','STATUS_CANCELLED'].includes(espnStatus)) mappedStatus = MatchStatus.CANCELLED;
+
+        const rawHome = homeComp?.score;
+        const rawAway = awayComp?.score;
+        const espnHomeScore = rawHome != null && !isNaN(Number(rawHome)) ? Number(rawHome) : undefined;
+        const espnAwayScore = rawAway != null && !isNaN(Number(rawAway)) ? Number(rawAway) : undefined;
+
+        // Update existing by externalId
+        const alreadyByExtId = await this.matchesRepo.findOne({ where: { externalId } });
+        if (alreadyByExtId) {
+          const updates: any = {};
+          // Buscar logos do Wikimedia se estiverem faltando
+          if (!alreadyByExtId.homeTeamLogo || !alreadyByExtId.awayTeamLogo) {
+            const missingLogos = await this.fetchMatchLogoFromESPN(homeTeam, awayTeam);
+            if (!alreadyByExtId.homeTeamLogo && missingLogos.homeTeamLogo) updates.homeTeamLogo = missingLogos.homeTeamLogo;
+            if (!alreadyByExtId.awayTeamLogo && missingLogos.awayTeamLogo) updates.awayTeamLogo = missingLogos.awayTeamLogo;
+          } else {
+            if (!alreadyByExtId.homeTeamLogo && homeTeamLogo) updates.homeTeamLogo = homeTeamLogo;
+            if (!alreadyByExtId.awayTeamLogo && awayTeamLogo) updates.awayTeamLogo = awayTeamLogo;
+          }
+
+
+          // Detect reschedule (date/time change > 5min)
+          const existingMs = alreadyByExtId.matchDate ? new Date(alreadyByExtId.matchDate).getTime() : 0;
+          if (Math.abs(matchDate.getTime() - existingMs) > 5 * 60 * 1000) {
+            const oldDate = alreadyByExtId.matchDate;
+            updates.matchDate = matchDate;
+            if (matchDate.getTime() > now.getTime() && alreadyByExtId.status === MatchStatus.SCHEDULED) {
+              updates.bolaoOpen = true;
+              updates.bolaoClosedAt = null;
+            }
+            this.logger.warn('REAGENDAMENTO: ' + homeTeam + ' x ' + awayTeam + ' | de ' + String(oldDate).slice(0,16) + ' para ' + matchDate.toISOString().slice(0,16));
+            await this.audit.log(null, 'MATCH_RESCHEDULE', 'AGENT', homeTeam + ' x ' + awayTeam + ': reagendado para ' + matchDate.toISOString().slice(0,16)).catch(() => {});
+          }
+
+          if (stadium && !alreadyByExtId.stadium) updates.stadium = stadium;
+          if (city && !alreadyByExtId.city) updates.city = city;
+          if (tvChannel && preciseBroadcast && alreadyByExtId.tvChannel !== tvChannel) {
+            updates.tvChannel = tvChannel;
+            if (streamPrimary) updates.streamUrl = streamPrimary;
+            if (Object.keys(broadcastUrlMap).length > 0) {
+              updates.matchStats = { ...(alreadyByExtId.matchStats || {}), broadcastUrls: broadcastUrlMap };
+            }
+          }
+          if (roundLabel && !alreadyByExtId.roundLabel) updates.roundLabel = roundLabel;
+
+          // Status transition with validation
+          if (alreadyByExtId.status !== mappedStatus) {
+            const valid: Record<string, string[]> = {
+              [MatchStatus.SCHEDULED]: [MatchStatus.LIVE, MatchStatus.FINISHED, MatchStatus.POSTPONED, MatchStatus.CANCELLED],
+              [MatchStatus.LIVE]: [MatchStatus.FINISHED],
+              [MatchStatus.POSTPONED]: [MatchStatus.SCHEDULED, MatchStatus.CANCELLED],
+            };
+            if ((valid[alreadyByExtId.status] || []).includes(mappedStatus)) {
+              updates.status = mappedStatus;
+              if (mappedStatus === MatchStatus.FINISHED) {
+                updates.bolaoOpen = false;
+                if (espnHomeScore !== undefined) updates.homeScore = espnHomeScore;
+                if (espnAwayScore !== undefined) updates.awayScore = espnAwayScore;
+              }
+              if (mappedStatus === MatchStatus.POSTPONED) {
+                this.logger.warn('JOGO ADIADO: ' + homeTeam + ' x ' + awayTeam);
+                await this.audit.log(null, 'MATCH_POSTPONED', 'AGENT', homeTeam + ' x ' + awayTeam + ': jogo adiado').catch(() => {});
+              }
+            }
+          }
+
+          if (Object.keys(updates).length > 0) await this.matchesRepo.update(alreadyByExtId.id, updates);
+          if (updates.status === MatchStatus.FINISHED && espnHomeScore !== undefined) {
+            this.bolaoAgent.processResults(alreadyByExtId.id).catch(() => {});
+          }
+          processed++;
+          continue;
+        }
+
+        // Match by team names + date window. ESPN and local/manual sources may
+        // differ on suffixes such as "Barra-SC" vs "Barra FC".
+        const windowStart = new Date(matchDate.getTime() - 60 * 60 * 1000);
+        const windowEnd = new Date(matchDate.getTime() + 60 * 60 * 1000);
+        const candidates = await this.matchesRepo.find({
+          where: { matchDate: Between(windowStart, windowEnd) },
+        });
+        const existing = candidates.find((candidate) =>
+          sameTeam(candidate.homeTeam, homeTeam) &&
+          sameTeam(candidate.awayTeam, awayTeam)
+        );
+        if (existing) {
+          const updates: any = {};
+          // Buscar logos do Wikimedia se estiverem faltando
+          if (!existing.homeTeamLogo || !existing.awayTeamLogo) {
+            const missingLogos = await this.fetchMatchLogoFromESPN(homeTeam, awayTeam);
+            if (!existing.homeTeamLogo && missingLogos.homeTeamLogo) updates.homeTeamLogo = missingLogos.homeTeamLogo;
+            if (!existing.awayTeamLogo && missingLogos.awayTeamLogo) updates.awayTeamLogo = missingLogos.awayTeamLogo;
+          } else {
+            if (!existing.homeTeamLogo && homeTeamLogo) updates.homeTeamLogo = homeTeamLogo;
+            if (!existing.awayTeamLogo && awayTeamLogo) updates.awayTeamLogo = awayTeamLogo;
+          }
+
+          if (!existing.externalId) updates.externalId = externalId;
+          if (stadium && !existing.stadium) updates.stadium = stadium;
+          if (city && !existing.city) updates.city = city;
+          if (tvChannel && preciseBroadcast && existing.tvChannel !== tvChannel) {
+            updates.tvChannel = tvChannel;
+            if (streamPrimary) updates.streamUrl = streamPrimary;
+            if (Object.keys(broadcastUrlMap).length > 0) {
+              updates.matchStats = { ...(existing.matchStats || {}), broadcastUrls: broadcastUrlMap };
+            }
+          }
+          if (roundLabel && !existing.roundLabel) updates.roundLabel = roundLabel;
+          const newComp = mapCompetition(championship);
+          if (existing.competition === Competition.OTHER && newComp !== Competition.OTHER) updates.competition = newComp;
+          if (mappedStatus !== MatchStatus.SCHEDULED && existing.status !== mappedStatus) {
+            updates.status = mappedStatus;
+            if (mappedStatus === MatchStatus.FINISHED) {
+              updates.bolaoOpen = false;
+              if (espnHomeScore !== undefined) updates.homeScore = espnHomeScore;
+              if (espnAwayScore !== undefined) updates.awayScore = espnAwayScore;
+            }
+          }
+          if (Object.keys(updates).length > 0) await this.matchesRepo.update(existing.id, updates);
+          if (updates.status === MatchStatus.FINISHED && espnHomeScore !== undefined) {
+            this.bolaoAgent.processResults(existing.id).catch(() => {});
+          }
+          processed++;
+          continue;
+        }
+
+        // New match discovered
+        const newComp = mapCompetition(championship);
+        this.logger.log('NOVO JOGO: ' + homeTeam + ' x ' + awayTeam + ' | ' + championship + ' | ' + matchDate.toISOString());
+        await this.audit.log(null, 'MATCH_DISCOVERED', 'AGENT', 'Novo: ' + homeTeam + ' x ' + awayTeam + ' (' + championship + ') ' + matchDate.toISOString().slice(0,10)).catch(() => {});
+
+        await this.matchesRepo.save(
+          this.matchesRepo.create({
+            externalId, homeTeam, awayTeam,
+            homeTeamLogo: homeTeamLogo || undefined,
+            awayTeamLogo: awayTeamLogo || undefined,
+            matchDate, competition: newComp, season,
+            status: mappedStatus as MatchStatus,
+            bolaoOpen: mappedStatus === MatchStatus.SCHEDULED,
+            homeScore: mappedStatus === MatchStatus.FINISHED && espnHomeScore !== undefined ? espnHomeScore : undefined,
+            awayScore: mappedStatus === MatchStatus.FINISHED && espnAwayScore !== undefined ? espnAwayScore : undefined,
+            stadium: stadium || undefined,
+            city: city || undefined,
+            tvChannel: tvChannel || undefined,
+            streamUrl: streamPrimary,
+            matchStats: Object.keys(broadcastUrlMap).length > 0 ? { broadcastUrls: broadcastUrlMap } : undefined,
+            roundLabel: roundLabel || undefined,
+          } as any),
+        );
+        seenEventIds.add(externalId);
+        processed++;
+      }
+    }
+    return processed;
+  }
+
+  private formatDateKey(d: Date): string {
+    return String(d.getUTCFullYear()) + String(d.getUTCMonth() + 1).padStart(2, '0') + String(d.getUTCDate()).padStart(2, '0');
+  }
+
+  private async fetchFromMeutimao(): Promise<void> {
+    const html = await this.fetchUrl('https://www.meutimao.com.br/proximos-jogos-do-corinthians');
+    if (!html) { this.logger.warn('Nao foi possivel buscar HTML do meutimao'); return; }
+    this.logger.log('Meutimao: HTML obtido, sem parser Claude disponivel');
+  }
+
+  async fetchMatchInfoFromGoogle(homeTeam: string, awayTeam: string): Promise<{ stadium?: string; tvChannel?: string; matchDate?: string }> {
+    const query = encodeURIComponent(homeTeam + ' x ' + awayTeam + ' horario estadio canal');
+    const html = await this.fetchUrl('https://www.google.com/search?q=' + query, {
+      'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+      'Accept-Language': 'pt-BR,pt;q=0.9',
+    });
+    if (!html) return {};
+    const result: { stadium?: string; tvChannel?: string; matchDate?: string } = {};
+    const stadiumMatch = html.match(/est[ao]dio[:\s]+([^<\n,]{5,50})/i);
+    if (stadiumMatch) result.stadium = stadiumMatch[1].trim();
+    const tvMatch = html.match(/(?:transmiss[ao]o|canal|ao vivo)[:\s]+([^<\n,]{3,30})/i);
+    if (tvMatch) result.tvChannel = tvMatch[1].trim();
+    const dateMatch = html.match(/(\d{1,2}\/\d{1,2}\/\d{4}[,\s]+\d{1,2}:\d{2})/);
+    if (dateMatch) result.matchDate = dateMatch[1].trim();
+    return result;
+  }
+
+  // Daily: near-term Cazé TV / GOAT / YouTube streams are usually published only
+  // a few days before kickoff, so refresh broadcast URLs every day to upgrade the
+  // generic channel fallback to the exact live-stream link in time for the match.
+  @Cron('0 6 * * *')
+  async updateBroadcastUrls(): Promise<void> {
+    this.logger.log('Atualizando URLs de transmissao...');
+    try {
+      const now = new Date();
+      const twoWeeksAhead = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
+      const upcoming = await this.matchesRepo
+        .createQueryBuilder('m')
+        .where('m.matchDate > :now', { now })
+        .andWhere('m.matchDate < :limit', { limit: twoWeeksAhead })
+        .andWhere('m.status = :status', { status: 'scheduled' })
+        .orderBy('m.matchDate', 'ASC')
+        .getMany();
+      const GENERIC_FALLBACKS = [
+        'youtube.com/@CazeTV/live',
+        'youtube.com/@CanalGOAT/live',
+        'youtube.com/@Corinthians/live',
+      ];
+      const isSpecific = (url: string) => url && !GENERIC_FALLBACKS.some(f => url.includes(f));
+
+      for (const match of upcoming) {
+        if (!match.tvChannel) continue;
+        const broadcastUrls = await resolveAllBroadcastUrls(match.tvChannel, match.homeTeam, match.awayTeam);
+        if (Object.keys(broadcastUrls).length > 0) {
+          const stats = match.matchStats || {};
+          const existingUrls = stats.broadcastUrls || {};
+          // Prefer specific URLs — never downgrade a specific live link to a generic fallback
+          const merged: Record<string, string> = { ...existingUrls };
+          for (const [ch, url] of Object.entries(broadcastUrls)) {
+            if (!merged[ch] || !isSpecific(merged[ch]) || isSpecific(url)) {
+              merged[ch] = url;
+            }
+          }
+          if (JSON.stringify(merged) !== JSON.stringify(existingUrls)) {
+            stats.broadcastUrls = merged;
+            await this.matchesRepo.update(match.id, { matchStats: stats });
+            this.logger.log('Broadcast URLs: ' + match.homeTeam + ' x ' + match.awayTeam + ' -> ' + JSON.stringify(merged));
+          }
+        }
+      }
+      this.logger.log('Broadcast URLs atualizadas: ' + upcoming.length + ' jogos');
+    } catch (err: any) {
+      this.logger.error('Erro broadcast URLs: ' + (err?.message || String(err)));
+    }
+  }
+
+  private fetchUrl(url: string, headers: Record<string, string> = {}): Promise<string | null> {
+    return new Promise((resolve) => {
+      // ESPN/Akamai returns 403 "Access Denied" for browser-like "Mozilla/..."
+      // User-Agents coming from datacenter IPs, so the whole schedule/scoreboard
+      // scan silently returned zero matches and fell back to the (no-op) meutimao
+      // path. A curl UA is treated as an API client and is allowed through.
+      const reqHeaders = { 'User-Agent': 'curl/7.88.1', ...headers };
+      const makeRequest = (targetUrl: string, redirects = 0): void => {
+        if (redirects > 5) { resolve(null); return; }
+        const lib = targetUrl.startsWith('https') ? https : require('http');
+        const req = lib.get(targetUrl, { headers: reqHeaders }, (res: any) => {
+          if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+            res.resume();
+            makeRequest(res.headers.location, redirects + 1);
+            return;
+          }
+          // Don't hand error pages (403/404/429/5xx) to JSON.parse; treat as failure.
+          if (res.statusCode >= 400) { res.resume(); resolve(null); return; }
+          let data = '';
+          res.on('data', (chunk: string) => (data += chunk));
+          res.on('end', () => resolve(data));
+          res.on('error', () => resolve(null));
+        });
+        req.on('error', () => resolve(null));
+        // Avoid hanging the entire run (hundreds of requests) on a stalled socket.
+        req.setTimeout(15000, () => { req.destroy(); resolve(null); });
+      };
+      makeRequest(url);
+    });
+  }
+}

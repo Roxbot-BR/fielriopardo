@@ -1,0 +1,325 @@
+"use client";
+import { useEffect, useState, type ChangeEvent } from "react";
+import { useAuth } from "@/contexts/AuthContext";
+import { useRouter } from "next/navigation";
+import api from "@/lib/api";
+import toast from "react-hot-toast";
+import { Plus, Pencil, Trash2, X, Save, Users, Upload } from "lucide-react";
+import { PlayerModal } from "@/components/PlayerModal";
+
+interface Player {
+  id?: string;
+  name: string;
+  number: number | null;
+  position: string;
+  nationality: string;
+  birthDate: string;
+  height: string;
+  weight: string;
+  imageUrl: string;
+  bio: string;
+  status: string;
+  arrivedAt: string;
+}
+
+const EMPTY: Player = {
+  name: "", number: null, position: "VOL", nationality: "Brasileiro",
+  birthDate: "", height: "", weight: "", imageUrl: "", bio: "", status: "active", arrivedAt: "",
+};
+
+const POSITIONS = ["GK", "ZAG", "LAT", "VOL", "MC", "ATK"];
+const POSITION_LABELS: Record<string, string> = {
+  GK: "Goleiro", ZAG: "Zagueiro", LAT: "Lateral", VOL: "Volante", MC: "Meia", ATK: "Atacante",
+};
+const STATUS_LABELS: Record<string, string> = {
+  active: "✅ Ativo", loaned: "↩️ Emprestado", sold: "❌ Saiu",
+};
+
+export default function AdminElencoPage() {
+  const { isAdmin, isLoading } = useAuth();
+  const router = useRouter();
+  const [players, setPlayers] = useState<Player[]>([]);
+  const [filter, setFilter] = useState("active");
+  const [showModal, setShowModal] = useState(false);
+  const [editing, setEditing] = useState<Player>(EMPTY);
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [selectedPlayer, setSelectedPlayer] = useState<any>(null);
+
+  useEffect(() => {
+    if (!isLoading && !isAdmin) router.push("/");
+  }, [isAdmin, isLoading]);
+
+  useEffect(() => { load(); }, [filter]);
+
+  async function load() {
+    try {
+      const r = await api.get<Player[]>(`/players?status=${filter}`);
+      setPlayers(r.data);
+    } catch { toast.error("Erro ao carregar elenco"); }
+  }
+
+  function openNew() { setEditing(EMPTY); setShowModal(true); }
+  function openEdit(p: Player) { setEditing({ ...p }); setShowModal(true); }
+
+  async function handlePhotoUpload(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const { data } = await api.post<{ url: string }>("/players/upload", fd, {
+        headers: { "Content-Type": undefined },
+      });
+      setEditing(prev => ({ ...prev, imageUrl: data.url }));
+      toast.success("Foto enviada!");
+    } catch {
+      toast.error("Erro ao enviar foto");
+    } finally {
+      setUploading(false);
+      e.target.value = "";
+    }
+  }
+
+  async function save() {
+    if (!editing.name.trim()) return toast.error("Nome é obrigatório");
+    setSaving(true);
+    try {
+      if (editing.id) {
+        await api.put(`/players/${editing.id}`, editing);
+        toast.success("Jogador atualizado!");
+      } else {
+        await api.post("/players", editing);
+        toast.success("Jogador adicionado!");
+      }
+      setShowModal(false);
+      load();
+    } catch { toast.error("Erro ao salvar jogador"); }
+    finally { setSaving(false); }
+  }
+
+  async function remove(id: string, name: string) {
+    if (!confirm(`Marcar "${name}" como saiu do clube?`)) return;
+    try {
+      await api.delete(`/players/${id}`);
+      toast.success("Jogador marcado como saiu");
+      load();
+    } catch { toast.error("Erro ao remover"); }
+  }
+
+  const grouped = POSITIONS.reduce((acc, pos) => {
+    const group = players.filter(p => p.position === pos);
+    if (group.length) acc[pos] = group;
+    return acc;
+  }, {} as Record<string, Player[]>);
+
+  if (isLoading) return <div className="p-8 text-center text-gray-400">Carregando...</div>;
+
+  return (
+    <div className="min-h-screen bg-black text-white p-6">
+      <div className="max-w-6xl mx-auto">
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3">
+            <Users className="text-yellow-400" size={28}/>
+            <h1 className="text-2xl font-bold text-yellow-400">Gerenciar Elenco</h1>
+          </div>
+          <button onClick={openNew} className="flex items-center gap-2 bg-yellow-400 text-black px-4 py-2 rounded-lg font-semibold hover:bg-yellow-300">
+            <Plus size={18}/> Adicionar Jogador
+          </button>
+        </div>
+
+        {/* Filters */}
+        <div className="flex gap-2 mb-6">
+          {Object.entries(STATUS_LABELS).map(([key, label]) => (
+            <button key={key} onClick={() => setFilter(key)}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${filter === key ? "bg-yellow-400 text-black" : "bg-gray-900 text-gray-300 border border-gray-700"}`}>
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {/* Table by position */}
+        {Object.entries(grouped).map(([pos, group]) => (
+          <div key={pos} className="mb-8">
+            <h2 className="text-yellow-400 font-semibold mb-3 text-sm uppercase tracking-wider">
+              {POSITION_LABELS[pos]} ({group.length})
+            </h2>
+            <div className="overflow-x-auto rounded-xl border border-gray-800">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-900 border-b border-gray-800">
+                  <tr>
+                    <th className="text-left px-4 py-3 text-gray-400 font-medium">#</th>
+                    <th className="text-left px-4 py-3 text-gray-400 font-medium">Foto</th>
+                    <th className="text-left px-4 py-3 text-gray-400 font-medium">Nome</th>
+                    <th className="text-left px-4 py-3 text-gray-400 font-medium">Nac.</th>
+                    <th className="text-left px-4 py-3 text-gray-400 font-medium">Status</th>
+                    <th className="text-right px-4 py-3 text-gray-400 font-medium">Ações</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {group.map(p => (
+                    <tr key={p.id} className="border-t border-gray-800 hover:bg-gray-900/50">
+                      <td className="px-4 py-3 text-yellow-400 font-bold">{p.number ?? "—"}</td>
+                      <td className="px-4 py-3">
+                        {p.imageUrl ? (
+                          <img src={p.imageUrl} alt={p.name} className="w-10 h-10 rounded-full object-cover"/>
+                        ) : (
+                          <div className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center text-gray-500 text-xs">👤</div>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 font-medium">
+                        <button onClick={() => setSelectedPlayer(p)} className="hover:text-yellow-400 transition-colors text-left">
+                          {p.name}
+                        </button>
+                      </td>
+                      <td className="px-4 py-3 text-gray-400">{p.nationality || "—"}</td>
+                      <td className="px-4 py-3">
+                        <span className={`px-2 py-0.5 rounded text-xs ${p.status === "active" ? "bg-green-900 text-green-300" : "bg-gray-800 text-gray-400"}`}>
+                          {STATUS_LABELS[p.status] ?? p.status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex gap-2 justify-end">
+                          <button onClick={() => openEdit(p)} className="p-1.5 rounded bg-gray-800 hover:bg-yellow-400/20 text-yellow-400">
+                            <Pencil size={14}/>
+                          </button>
+                          <button onClick={() => remove(p.id!, p.name)} className="p-1.5 rounded bg-gray-800 hover:bg-red-400/20 text-red-400">
+                            <Trash2 size={14}/>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ))}
+
+        {players.length === 0 && (
+          <div className="text-center text-gray-400 py-16">
+            <div className="text-4xl mb-3">👕</div>
+            <p>Nenhum jogador cadastrado.</p>
+            <button onClick={openNew} className="mt-4 bg-yellow-400 text-black px-6 py-2 rounded-lg font-semibold">
+              Adicionar o primeiro
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Edit/Add Modal */}
+      {showModal && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-900 rounded-2xl border border-gray-700 w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-5 border-b border-gray-800">
+              <h2 className="font-bold text-lg">{editing.id ? "Editar Jogador" : "Adicionar Jogador"}</h2>
+              <button onClick={() => setShowModal(false)} className="text-gray-400 hover:text-white"><X size={20}/></button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div className="grid grid-cols-3 gap-3">
+                <div className="col-span-2">
+                  <label className="block text-xs text-gray-400 mb-1">Nome *</label>
+                  <input value={editing.name} onChange={e => setEditing({...editing, name: e.target.value})}
+                    className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-yellow-400 outline-none" placeholder="Nome completo"/>
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">Número</label>
+                  <input type="number" value={editing.number ?? ""} onChange={e => setEditing({...editing, number: e.target.value ? +e.target.value : null})}
+                    className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-yellow-400 outline-none" placeholder="10"/>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">Posição</label>
+                  <select value={editing.position} onChange={e => setEditing({...editing, position: e.target.value})}
+                    className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-yellow-400 outline-none">
+                    {POSITIONS.map(p => <option key={p} value={p}>{POSITION_LABELS[p]}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">Status</label>
+                  <select value={editing.status} onChange={e => setEditing({...editing, status: e.target.value})}
+                    className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-yellow-400 outline-none">
+                    <option value="active">Ativo</option>
+                    <option value="loaned">Emprestado</option>
+                    <option value="sold">Saiu</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">Nacionalidade</label>
+                  <input value={editing.nationality} onChange={e => setEditing({...editing, nationality: e.target.value})}
+                    className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-yellow-400 outline-none" placeholder="Brasileiro"/>
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">Data de nascimento</label>
+                  <input type="date" value={editing.birthDate} onChange={e => setEditing({...editing, birthDate: e.target.value})}
+                    className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-yellow-400 outline-none"/>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">Altura</label>
+                  <input value={editing.height} onChange={e => setEditing({...editing, height: e.target.value})}
+                    className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-yellow-400 outline-none" placeholder="1,85m"/>
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">Peso</label>
+                  <input value={editing.weight} onChange={e => setEditing({...editing, weight: e.target.value})}
+                    className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-yellow-400 outline-none" placeholder="80kg"/>
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">No clube desde</label>
+                  <input type="date" value={editing.arrivedAt} onChange={e => setEditing({...editing, arrivedAt: e.target.value})}
+                    className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-yellow-400 outline-none"/>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Foto do jogador</label>
+                <div className="flex items-center gap-3">
+                  {editing.imageUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={editing.imageUrl} alt="preview" className="w-14 h-14 rounded-full object-cover border border-gray-700"
+                      onError={e => { (e.target as HTMLImageElement).src = "/logo.jpeg"; }} />
+                  ) : (
+                    <div className="w-14 h-14 rounded-full bg-gray-800 border border-gray-700 flex items-center justify-center text-gray-500 text-xs">sem foto</div>
+                  )}
+                  <label className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm cursor-pointer transition ${uploading ? "bg-gray-700 text-gray-400" : "bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/30"}`}>
+                    <Upload size={14} /> {uploading ? "Enviando..." : "Enviar foto"}
+                    <input type="file" accept="image/*" className="hidden" disabled={uploading} onChange={handlePhotoUpload} />
+                  </label>
+                </div>
+                <input value={editing.imageUrl} onChange={e => setEditing({...editing, imageUrl: e.target.value})}
+                  className="w-full mt-2 bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-yellow-400 outline-none" placeholder="ou cole uma URL https://..."/>
+                <p className="text-[11px] text-gray-500 mt-1">Prefira enviar a foto (fica hospedada localmente). Links de sites externos podem parar de funcionar por bloqueio de hotlink.</p>
+              </div>
+
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Bio / Descrição</label>
+                <textarea value={editing.bio} onChange={e => setEditing({...editing, bio: e.target.value})}
+                  rows={3} className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-yellow-400 outline-none resize-none" placeholder="Breve bio do jogador..."/>
+              </div>
+            </div>
+
+            <div className="p-5 border-t border-gray-800 flex justify-end gap-3">
+              <button onClick={() => setShowModal(false)} className="px-4 py-2 bg-gray-800 rounded-lg text-sm text-gray-300 hover:bg-gray-700">
+                Cancelar
+              </button>
+              <button onClick={save} disabled={saving} className="flex items-center gap-2 px-4 py-2 bg-yellow-400 text-black rounded-lg font-semibold text-sm hover:bg-yellow-300 disabled:opacity-50">
+                <Save size={16}/> {saving ? "Salvando..." : "Salvar"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {selectedPlayer && <PlayerModal player={selectedPlayer} onClose={() => setSelectedPlayer(null)} />}
+    </div>
+  );
+}

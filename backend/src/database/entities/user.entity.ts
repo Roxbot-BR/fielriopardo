@@ -1,0 +1,31 @@
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToMany, JoinTable } from "typeorm";
+import { Role } from "./role.entity";
+
+@Entity("users")
+export class User {
+  @PrimaryGeneratedColumn("uuid")                          id!: string;
+  @Column({ name: "full_name", type: "varchar" })          fullName!: string;
+  @Column({ unique: true, type: "varchar" })               nick!: string;
+  @Column({ unique: true, type: "varchar" })               email!: string;
+  @Column({ name: "password_hash", type: "varchar" })      passwordHash!: string;
+  @Column({ nullable: true, type: "varchar" })             whatsapp!: string;
+  @Column({ nullable: true, type: "varchar" })             city!: string;
+  @Column({ nullable: true, type: "varchar" })             state!: string;
+  @Column({ name: "birth_date", type: "date", nullable: true }) birthDate!: string;
+  @Column({ name: "is_claimed", default: false })         isClaimed!: boolean;
+  @Column({ name: "is_active",       default: true })      isActive!: boolean;
+  @Column({ name: "email_verified",  default: false })     emailVerified!: boolean;
+  @Column({ name: "avatar_url",  nullable: true, type: "varchar" }) avatarUrl!: string;
+  @Column({ name: "pwa_installed", default: false })       pwaInstalled!: boolean;
+  @Column({ name: "notify_bolao_open",    default: true }) notifyBolaoOpen!: boolean;
+  @Column({ name: "notify_bolao_close",   default: true }) notifyBolaoClose!: boolean;
+  @Column({ name: "notify_ranking",       default: true }) notifyRanking!: boolean;
+  @Column({ name: "notify_birthday",      default: true }) notifyBirthday!: boolean;
+  @Column({ name: "reset_token", nullable: true, type: "varchar" }) resetToken?: string;
+  @Column({ name: "reset_token_expires", type: "timestamp", nullable: true }) resetTokenExpires?: Date;
+  @CreateDateColumn({ name: "created_at" })                createdAt!: Date;
+  @UpdateDateColumn({ name: "updated_at" })                updatedAt!: Date;
+  @ManyToMany(() => Role, { eager: true })
+  @JoinTable({ name: "user_roles", joinColumn: { name: "user_id" }, inverseJoinColumn: { name: "role_id" } })
+  roles!: Role[];
+}

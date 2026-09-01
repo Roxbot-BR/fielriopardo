@@ -1,0 +1,620 @@
+"use client";
+import { useEffect, useState, useRef } from "react";
+import { useRouter } from "next/navigation";
+import { Camera, Plus, Pencil, Trash2, Upload, X, ImageIcon, MessageCircle } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
+import { API_URL } from "@/lib/api";
+
+interface Caravan {
+  id: string;
+  title: string;
+  description?: string;
+  date?: string;
+  departureTime?: string;
+  arrivalTime?: string;
+  departureLocation?: string;
+  departurePoint?: string;
+  departureCity?: string;
+  price: number;
+  vacancyTotal?: number;
+  capacity?: number;
+  spotsTaken?: number;
+  contactWhatsapp?: string;
+  coverImage?: string;
+  coverImagePosition?: string;
+  gallery?: string[];
+  status?: string;
+  departureDatetime?: string;
+}
+
+type GalleryMode = "individual" | "multiple";
+
+export default function AdminCaravanasPage() {
+  const { isAdmin, isMaster, token } = useAuth();
+  const router = useRouter();
+
+  const [caravans, setCaravans] = useState<Caravan[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [msg, setMsg] = useState("");
+  const [showModal, setShowModal] = useState(false);
+  const [editing, setEditing] = useState<Caravan | null>(null);
+
+  const [form, setForm] = useState({
+    title: "",
+    description: "",
+    date: "",
+    departureTime: "",
+    arrivalTime: "",
+    departureLocation: "",
+    departureCity: "São José do Rio Pardo - SP",
+    price: "",
+    vacancyTotal: "",
+    contactWhatsapp: "",
+    coverImage: "",
+    coverImagePosition: "50% 50%",
+  });
+
+  const coverRef = useRef<HTMLInputElement>(null);
+  const galleryRef = useRef<HTMLInputElement>(null);
+  const [coverPreview, setCoverPreview] = useState<string>("");
+  const [coverUploading, setCoverUploading] = useState(false);
+  const [isDraggingPos, setIsDraggingPos] = useState(false);
+  const [galleryMode, setGalleryMode] = useState<GalleryMode>("individual");
+  const [gallery, setGallery] = useState<string[]>([]);
+  const [galleryUploading, setGalleryUploading] = useState(false);
+
+  const authHeader = { Authorization: `Bearer ${token}` };
+
+  useEffect(() => {
+    if (!isAdmin && !isMaster) { router.push("/"); return; }
+    loadCaravans();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function loadCaravans() {
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/caravans`, { headers: authHeader });
+      const data = await res.json();
+      setCaravans(Array.isArray(data) ? data : []);
+    } catch {
+      setCaravans([]);
+    }
+    setLoading(false);
+  }
+
+  function openCreate() {
+    setEditing(null);
+    setForm({ title: "", description: "", date: "", departureTime: "", arrivalTime: "", departureLocation: "", departureCity: "São José do Rio Pardo - SP", price: "", vacancyTotal: "", contactWhatsapp: "", coverImage: "", coverImagePosition: "50% 50%" });
+    setCoverPreview("");
+    setGallery([]);
+    setShowModal(true);
+  }
+
+  function openEdit(c: Caravan) {
+    setEditing(c);
+    const dateStr = c.date ?? c.departureDatetime?.slice(0, 10) ?? "";
+    const timeStr = c.departureTime ?? c.departureDatetime?.slice(11, 16) ?? "";
+    setForm({
+      title: c.title ?? "",
+      description: c.description ?? "",
+      date: dateStr,
+      departureTime: timeStr,
+      arrivalTime: c.arrivalTime ?? "",
+      departureLocation: c.departureLocation ?? c.departurePoint ?? "",
+      departureCity: c.departureCity ?? "São José do Rio Pardo - SP",
+      price: String(c.price ?? ""),
+      vacancyTotal: String(c.vacancyTotal ?? c.capacity ?? ""),
+      contactWhatsapp: c.contactWhatsapp ?? "",
+      coverImage: c.coverImage ?? "",
+      coverImagePosition: c.coverImagePosition ?? "50% 50%",
+    });
+    setCoverPreview(c.coverImage ?? "");
+    setGallery(Array.isArray(c.gallery) ? c.gallery : []);
+    setShowModal(true);
+  }
+
+  async function uploadCover(file: File) {
+    setCoverUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch(`${API_URL}/caravans/upload`, { method: "POST", headers: authHeader, body: fd });
+      const data = await res.json();
+      if (data.url) {
+        setForm(f => ({ ...f, coverImage: data.url }));
+        setCoverPreview(data.url);
+      }
+    } catch {
+      setMsg("Erro ao fazer upload da capa");
+    }
+    setCoverUploading(false);
+  }
+
+  async function uploadGalleryOne(file: File) {
+    setGalleryUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch(`${API_URL}/caravans/upload-gallery`, { method: "POST", headers: authHeader, body: fd });
+      const data = await res.json();
+      if (data.url) setGallery(g => [...g, data.url]);
+    } catch {
+      setMsg("Erro ao fazer upload da foto");
+    }
+    setGalleryUploading(false);
+  }
+
+  async function uploadGalleryMultiple(files: FileList) {
+    setGalleryUploading(true);
+    try {
+      const fd = new FormData();
+      Array.from(files).forEach(f => fd.append("files", f));
+      const res = await fetch(`${API_URL}/caravans/upload-gallery-multiple`, { method: "POST", headers: authHeader, body: fd });
+      const data = await res.json();
+      const urls: string[] = Array.isArray(data.urls)
+        ? data.urls
+        : Array.isArray(data)
+          ? (data as { url: string }[]).map(d => d.url)
+          : [];
+      if (urls.length) setGallery(g => [...g, ...urls]);
+    } catch {
+      setMsg("Erro ao fazer upload das fotos");
+    }
+    setGalleryUploading(false);
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    // Build ISO datetime strings for backend
+    const dateStr = form.date || new Date().toISOString().slice(0, 10);
+    const timeStr = form.departureTime || "00:00";
+    const departureDatetime = new Date(`${dateStr}T${timeStr}:00-03:00`).toISOString();
+    const returnDatetime = form.arrivalTime
+      ? new Date(`${dateStr}T${form.arrivalTime}:00-03:00`).toISOString()
+      : undefined;
+    const payload = {
+      title: form.title,
+      description: form.description,
+      departureDatetime,
+      returnDatetime,
+      departureCity: form.departureCity || "São José do Rio Pardo - SP",
+      departurePoint: form.departureLocation,
+      price: parseFloat(form.price) || 0,
+      capacity: parseInt(form.vacancyTotal) || 40,
+      contactWhatsapp: form.contactWhatsapp,
+      coverImage: form.coverImage,
+      coverImagePosition: form.coverImagePosition,
+    };
+    const url = editing ? `${API_URL}/caravans/${editing.id}` : `${API_URL}/caravans`;
+    const method = editing ? "PATCH" : "POST";
+    try {
+      const res = await fetch(url, {
+        method,
+        headers: { ...authHeader, "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (res.ok) {
+        setMsg(editing ? "Caravana atualizada com sucesso!" : "Caravana criada com sucesso!");
+        setShowModal(false);
+        loadCaravans();
+      } else {
+        const d = await res.json();
+        setMsg(`Erro: ${d.message ?? "Falha ao salvar"}`);
+      }
+    } catch {
+      setMsg("Erro de rede ao salvar");
+    }
+  }
+
+  async function handleDelete(id: string) {
+    if (!confirm("Remover caravana?")) return;
+    try {
+      await fetch(`${API_URL}/caravans/${id}`, { method: "DELETE", headers: authHeader });
+      setMsg("Caravana removida!");
+      loadCaravans();
+    } catch {
+      setMsg("Erro ao remover");
+    }
+  }
+
+  const waNumber = form.contactWhatsapp.replace(/\D/g, "");
+
+  return (
+    <div className="min-h-screen bg-black text-white p-6">
+      <div className="max-w-6xl mx-auto">
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h1 className="text-3xl font-bold">🚌 Caravanas</h1>
+            <p className="text-gray-400 mt-1">Gerenciar caravanas</p>
+          </div>
+          <button
+            onClick={openCreate}
+            className="flex items-center gap-2 bg-white text-black font-bold px-5 py-2 rounded-xl hover:bg-gray-200 transition"
+          >
+            <Plus size={18} /> Nova Caravana
+          </button>
+        </div>
+
+        {msg && (
+          <div className="mb-4 p-3 bg-gray-900 border border-gray-700 rounded-xl text-center flex items-center justify-center gap-3">
+            <span>{msg}</span>
+            <button onClick={() => setMsg("")} className="text-gray-400 hover:text-white">
+              <X size={14} />
+            </button>
+          </div>
+        )}
+
+        {loading ? (
+          <div className="text-center py-16 text-gray-400 animate-pulse">Carregando...</div>
+        ) : caravans.length === 0 ? (
+          <div className="text-center py-16 text-gray-500 bg-gray-900 rounded-xl border border-gray-800">
+            Nenhuma caravana cadastrada.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {caravans.map(c => (
+              <div key={c.id} className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+                <div className="relative h-36 bg-gray-800">
+                  {c.coverImage
+                    ? <img src={c.coverImage} alt={c.title} className="w-full h-full object-cover" />
+                    : <div className="w-full h-full flex items-center justify-center text-4xl">🚌</div>
+                  }
+                  {c.status && (
+                    <span className={`absolute top-2 right-2 text-xs font-bold px-2 py-1 rounded-full text-white ${
+                      c.status === "open" ? "bg-[#C8A951]" : c.status === "full" ? "bg-yellow-600" : "bg-gray-600"
+                    }`}>
+                      {c.status}
+                    </span>
+                  )}
+                </div>
+                <div className="p-4">
+                  <h3 className="font-bold text-white mb-1 line-clamp-1">{c.title}</h3>
+                  {(c.date ?? c.departureDatetime) && (
+                    <p className="text-gray-400 text-sm">
+                      📅 {new Date((c.date ?? c.departureDatetime)!).toLocaleDateString("pt-BR")}
+                    </p>
+                  )}
+                  {c.contactWhatsapp && (
+                    <p className="text-[#C8A951] text-sm flex items-center gap-1">
+                      <MessageCircle size={12} /> {c.contactWhatsapp}
+                    </p>
+                  )}
+                  <div className="flex gap-2 mt-3">
+                    <button
+                      onClick={() => openEdit(c)}
+                      className="flex-1 flex items-center justify-center gap-1 bg-gray-700 hover:bg-gray-600 text-white text-sm py-1.5 rounded-lg transition"
+                    >
+                      <Pencil size={14} /> Editar
+                    </button>
+                    <a
+                      href={`/admin/caravanas/${c.id}/fotos`}
+                      className="px-3 flex items-center gap-1 bg-[#C8A951]/20 hover:bg-[#C8A951]/35 text-[#C8A951] text-sm py-1.5 rounded-lg transition font-medium"
+                      title="Banco de Fotos"
+                    >
+                      <Camera size={14} /> Fotos
+                    </a>
+                    <button
+                      onClick={() => handleDelete(c.id)}
+                      className="px-3 flex items-center bg-red-900/50 hover:bg-red-900 text-red-300 text-sm py-1.5 rounded-lg transition"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {showModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-start justify-center p-4 overflow-y-auto">
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 w-full max-w-2xl my-4">
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-xl font-bold">{editing ? "Editar Caravana" : "Nova Caravana"}</h2>
+              <button onClick={() => setShowModal(false)} className="text-gray-400 hover:text-white">
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label className="text-sm text-gray-400 block mb-1">Título *</label>
+                <input
+                  value={form.title}
+                  onChange={e => setForm({ ...form, title: e.target.value })}
+                  required
+                  className="w-full bg-gray-800 rounded-lg px-3 py-2 text-white border border-gray-700 focus:border-gray-500 outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="text-sm text-gray-400 block mb-1">Descrição</label>
+                <textarea
+                  value={form.description}
+                  onChange={e => setForm({ ...form, description: e.target.value })}
+                  rows={3}
+                  className="w-full bg-gray-800 rounded-lg px-3 py-2 text-white border border-gray-700 focus:border-gray-500 outline-none resize-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="text-sm text-gray-400 block mb-1">Data *</label>
+                  <input
+                    type="date"
+                    value={form.date}
+                    onChange={e => setForm({ ...form, date: e.target.value })}
+                    required
+                    className="w-full bg-gray-800 rounded-lg px-3 py-2 text-white border border-gray-700 focus:border-gray-500 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm text-gray-400 block mb-1">Hora saída</label>
+                  <input
+                    type="time"
+                    value={form.departureTime}
+                    onChange={e => setForm({ ...form, departureTime: e.target.value })}
+                    className="w-full bg-gray-800 rounded-lg px-3 py-2 text-white border border-gray-700 focus:border-gray-500 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm text-gray-400 block mb-1">Hora retorno</label>
+                  <input
+                    type="time"
+                    value={form.arrivalTime}
+                    onChange={e => setForm({ ...form, arrivalTime: e.target.value })}
+                    className="w-full bg-gray-800 rounded-lg px-3 py-2 text-white border border-gray-700 focus:border-gray-500 outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-sm text-gray-400 block mb-1">Ponto de saída (endereço) *</label>
+                <input
+                  value={form.departureLocation}
+                  onChange={e => setForm({ ...form, departureLocation: e.target.value })}
+                  required
+                  placeholder="Ex: Praça Getúlio Vargas, em frente ao Coreto"
+                  className="w-full bg-gray-800 rounded-lg px-3 py-2 text-white border border-gray-700 focus:border-gray-500 outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="text-sm text-gray-400 block mb-1">Cidade de saída</label>
+                <input
+                  value={form.departureCity}
+                  onChange={e => setForm({ ...form, departureCity: e.target.value })}
+                  placeholder="Ex: São José do Rio Pardo - SP"
+                  className="w-full bg-gray-800 rounded-lg px-3 py-2 text-white border border-gray-700 focus:border-gray-500 outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-sm text-gray-400 block mb-1">Preço (R$)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={form.price}
+                    onChange={e => setForm({ ...form, price: e.target.value })}
+                    className="w-full bg-gray-800 rounded-lg px-3 py-2 text-white border border-gray-700 focus:border-gray-500 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm text-gray-400 block mb-1">Total de vagas</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={form.vacancyTotal}
+                    onChange={e => setForm({ ...form, vacancyTotal: e.target.value })}
+                    className="w-full bg-gray-800 rounded-lg px-3 py-2 text-white border border-gray-700 focus:border-gray-500 outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-sm text-gray-400 block mb-1">WhatsApp de contato</label>
+                <input
+                  value={form.contactWhatsapp}
+                  onChange={e => setForm({ ...form, contactWhatsapp: e.target.value })}
+                  placeholder="19988887777"
+                  className="w-full bg-gray-800 rounded-lg px-3 py-2 text-white border border-gray-700 focus:border-gray-500 outline-none"
+                />
+                {waNumber && (
+                  <div className="mt-2">
+                    <p className="text-xs text-gray-500 mb-1">Prévia do botão:</p>
+                    <a
+                      href={`https://wa.me/55${waNumber}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 bg-[#C8A951] hover:bg-[#a08535] text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                    >
+                      <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
+                        <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/>
+                        <path d="M12 0C5.373 0 0 5.373 0 12c0 2.105.544 4.082 1.499 5.799L0 24l6.335-1.499A11.955 11.955 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22c-1.886 0-3.65-.494-5.176-1.357l-.371-.22-3.763.89.908-3.659-.241-.379A9.946 9.946 0 012 12C2 6.477 6.477 2 12 2s10 4.477 10 10-4.477 10-10 10z"/>
+                      </svg>
+                      WhatsApp
+                    </a>
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="text-sm text-gray-400 block mb-1">Imagem de capa</label>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => coverRef.current?.click()}
+                    disabled={coverUploading}
+                    className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-white text-sm px-4 py-2 rounded-lg transition"
+                  >
+                    <Upload size={14} /> {coverUploading ? "Enviando..." : "Escolher arquivo"}
+                  </button>
+                  {coverPreview && (
+                    <button
+                      type="button"
+                      onClick={() => { setCoverPreview(""); setForm(f => ({ ...f, coverImage: "" })); }}
+                      className="text-red-400 hover:text-red-300 text-xs flex items-center gap-1"
+                    >
+                      <X size={12} /> Remover
+                    </button>
+                  )}
+                </div>
+                <input
+                  ref={coverRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={e => {
+                    const f = e.target.files?.[0];
+                    if (f) uploadCover(f);
+                  }}
+                />
+                {coverPreview && (
+                  <div className="mt-2 space-y-2">
+                    <div
+                      className="relative w-full h-40 rounded-lg overflow-hidden border border-gray-700 cursor-crosshair select-none group"
+                      title="Clique ou arraste para ajustar o ponto focal da imagem"
+                      onMouseDown={(e) => {
+                        setIsDraggingPos(true);
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        const x = Math.round(((e.clientX - rect.left) / rect.width) * 100);
+                        const y = Math.round(((e.clientY - rect.top) / rect.height) * 100);
+                        setForm(f => ({ ...f, coverImagePosition: `${x}% ${y}%` }));
+                      }}
+                      onMouseMove={(e) => {
+                        if (!isDraggingPos) return;
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        const x = Math.round(((e.clientX - rect.left) / rect.width) * 100);
+                        const y = Math.round(((e.clientY - rect.top) / rect.height) * 100);
+                        setForm(f => ({ ...f, coverImagePosition: `${x}% ${y}%` }));
+                      }}
+                      onMouseUp={() => setIsDraggingPos(false)}
+                      onMouseLeave={() => setIsDraggingPos(false)}
+                    >
+                      <img
+                        src={coverPreview}
+                        alt="Capa"
+                        className="w-full h-full object-cover pointer-events-none"
+                        style={{ objectPosition: form.coverImagePosition ?? "50% 50%" }}
+                      />
+                      {/* Focal point crosshair */}
+                      {(() => {
+                        const parts = (form.coverImagePosition ?? "50% 50%").split(" ");
+                        const px = parseFloat(parts[0] ?? "50");
+                        const py = parseFloat(parts[1] ?? "50");
+                        return (
+                          <div
+                            className="absolute pointer-events-none"
+                            style={{ left: `${px}%`, top: `${py}%`, transform: "translate(-50%, -50%)" }}
+                          >
+                            <div className="w-5 h-5 rounded-full border-2 border-white shadow-lg bg-[#C8A951]/60 ring-1 ring-[#C8A951]" />
+                          </div>
+                        );
+                      })()}
+                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors pointer-events-none" />
+                      <div className="absolute bottom-1 left-1 right-1 text-center opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                        <span className="text-[10px] bg-black/70 text-white px-2 py-0.5 rounded-full">
+                          Clique para ajustar ponto focal · {form.coverImagePosition}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-sm text-gray-400">Galeria de fotos</label>
+                  <div className="flex gap-1 bg-gray-800 p-0.5 rounded-lg">
+                    <button
+                      type="button"
+                      onClick={() => setGalleryMode("individual")}
+                      className={`px-3 py-1 rounded-md text-xs font-medium transition ${
+                        galleryMode === "individual" ? "bg-white text-black" : "text-gray-400 hover:text-white"
+                      }`}
+                    >
+                      Individual
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setGalleryMode("multiple")}
+                      className={`px-3 py-1 rounded-md text-xs font-medium transition ${
+                        galleryMode === "multiple" ? "bg-white text-black" : "text-gray-400 hover:text-white"
+                      }`}
+                    >
+                      Múltiplas
+                    </button>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => galleryRef.current?.click()}
+                  disabled={galleryUploading}
+                  className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-white text-sm px-4 py-2 rounded-lg transition w-full justify-center"
+                >
+                  <ImageIcon size={14} />
+                  {galleryUploading ? "Enviando..." : galleryMode === "individual" ? "Adicionar foto" : "Adicionar fotos (pasta/múltiplas)"}
+                </button>
+                <input
+                  ref={galleryRef}
+                  type="file"
+                  accept="image/*"
+                  multiple={galleryMode === "multiple"}
+                  className="hidden"
+                  onChange={e => {
+                    const files = e.target.files;
+                    if (!files) return;
+                    if (galleryMode === "individual" && files[0]) {
+                      uploadGalleryOne(files[0]);
+                    } else {
+                      uploadGalleryMultiple(files);
+                    }
+                    e.target.value = "";
+                  }}
+                />
+
+                {gallery.length > 0 && (
+                  <div className="mt-3 grid grid-cols-4 gap-2">
+                    {gallery.map((url, i) => (
+                      <div key={i} className="relative aspect-square rounded-lg overflow-hidden group">
+                        <img src={url} alt={`Foto ${i + 1}`} className="w-full h-full object-cover" />
+                        <button
+                          type="button"
+                          onClick={() => setGallery(g => g.filter((_, idx) => idx !== i))}
+                          className="absolute top-1 right-1 bg-black/70 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition"
+                        >
+                          <X size={10} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="submit"
+                  className="flex-1 bg-white text-black font-bold py-2 rounded-xl hover:bg-gray-200 transition"
+                >
+                  {editing ? "Salvar alterações" : "Criar caravana"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowModal(false)}
+                  className="px-6 bg-gray-800 text-white rounded-xl hover:bg-gray-700 transition"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

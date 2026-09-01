@@ -1,0 +1,327 @@
+import { Logger } from '@nestjs/common';
+import * as https from 'https';
+
+const logger = new Logger('BroadcastUtils');
+
+// ──────────────────────────────────────────────────
+// Channel -> Streaming URL map (generic fallback)
+// ──────────────────────────────────────────────────
+export const CHANNEL_STREAM_URLS: Record<string, string> = {
+  'ESPN':                'https://www.disneyplus.com',
+  'ESPN Brasil':         'https://www.disneyplus.com',
+  'Disney+':             'https://www.disneyplus.com',
+  'Amazon Prime Video':  'https://www.primevideo.com',
+  'Premiere':            'https://premiere.globo.com',
+  'SporTV':              'https://ge.globo.com/sportv/',
+  'TV Globo':            'https://globoplay.globo.com',
+  'Globoplay':           'https://globoplay.globo.com',
+  'Paramount+':          'https://www.paramountplus.com',
+  'CONMEBOL TV':         'https://conmeboltv.com.br',
+  'SBT':                 'https://www.sbt.com.br/ao-vivo',
+  'RecordTV':            'https://www.r7.com/recordtv',
+  'TV Band':             'https://www.band.uol.com.br/ao-vivo',
+};
+
+// YouTube channels that need specific live stream URL resolution
+const YOUTUBE_CHANNELS: Record<string, { handle: string; fallback: string }> = {
+  'Caze TV':  { handle: '@CazeTV',       fallback: 'https://www.youtube.com/@CazeTV/live' },
+  'CazeTV':   { handle: '@CazeTV',       fallback: 'https://www.youtube.com/@CazeTV/live' },
+  'GOAT':     { handle: '@CanalGOAT',    fallback: 'https://www.youtube.com/@CanalGOAT/live' },
+  'YouTube':  { handle: '@Corinthians',   fallback: 'https://www.youtube.com/@Corinthians/live' },
+  'Corinthians TV': { handle: '@Corinthians', fallback: 'https://www.youtube.com/@Corinthians/live' },
+};
+
+// ──────────────────────────────────────────────────
+// Normalization
+// ──────────────────────────────────────────────────
+export function normalizeChannel(name: string): string {
+  const n = (name || '').trim();
+  if (!n) return '';
+  const u = n.toLowerCase();
+  if (u === 'disney+' || u === 'espn+' || u === 'espn plus' || u === 'disneyplus') return 'Disney+';
+  if (u === 'espn' || u === 'espn brasil' || u === 'espn brazil') return 'ESPN';
+  if (u.includes('conmebol')) return 'CONMEBOL TV';
+  if (u.includes('amazon') || u.includes('prime video')) return 'Amazon Prime Video';
+  if (/caz[ee\u00e9]\s*tv/i.test(n)) return 'Caze TV';
+  if (u.includes('goat')) return 'GOAT';
+  if (u === 'sbt') return 'SBT';
+  if (u === 'record' || u === 'recordtv' || u === 'record tv') return 'RecordTV';
+  if (u === 'band' || u === 'tv band' || u === 'bandeirantes') return 'TV Band';
+  if (u.includes('globoplay')) return 'Globoplay';
+  if (u.includes('globo') && !u.includes('esporte') && !u.includes('sportv')) return 'TV Globo';
+  if (u.includes('sportv') || u.includes('sporttv') || u.includes('sport tv')) return 'SporTV';
+  if (u.includes('premiere')) return 'Premiere';
+  if (u.includes('paramount')) return 'Paramount+';
+  if (u.includes('youtube')) return 'YouTube';
+  return n;
+}
+
+export function normalizeChannelList(names: string[]): string {
+  if (!names || names.length === 0) return '';
+  const normalized = names.map(normalizeChannel).filter(Boolean);
+  const seen = new Set<string>();
+  const unique = normalized.filter(n => { if (seen.has(n)) return false; seen.add(n); return true; });
+  return unique.join(' / ');
+}
+
+// ──────────────────────────────────────────────────
+// Per-competition broadcast rights (Brazil 2026)
+// ──────────────────────────────────────────────────
+export const COMPETITION_BROADCAST: Record<string, { channels: string[]; primary: string }> = {
+  BRASILEIRAO: {
+    channels: ['Amazon Prime Video', 'Premiere'],
+    primary: 'Amazon Prime Video',
+  },
+  COPA_DO_BRASIL: {
+    channels: ['Amazon Prime Video', 'SporTV', 'TV Globo', 'Premiere'],
+    primary: 'Amazon Prime Video',
+  },
+  LIBERTADORES: {
+    channels: ['ESPN', 'Disney+', 'Paramount+'],
+    primary: 'ESPN',
+  },
+  SULAMERICANA: {
+    channels: ['ESPN', 'Disney+', 'Paramount+'],
+    primary: 'ESPN',
+  },
+  PAULISTAO: {
+    channels: ['RecordTV', 'Caze TV', 'GOAT', 'YouTube'],
+    primary: 'RecordTV',
+  },
+  FRIENDLY: { channels: ['A definir'], primary: 'A definir' },
+  OTHER:    { channels: ['A definir'], primary: 'A definir' },
+};
+
+export function detectBroadcast(competition: string): { tv: string; stream?: string } {
+  const key = competition?.toUpperCase().replace(/[\s-]/g, '_') || 'OTHER';
+  const info = COMPETITION_BROADCAST[key] || COMPETITION_BROADCAST['OTHER'];
+  return { tv: info.channels.join(' / '), stream: CHANNEL_STREAM_URLS[info.primary] };
+}
+
+// ──────────────────────────────────────────────────
+// Resolve the PRIMARY stream URL from tv_channel string
+// ──────────────────────────────────────────────────
+export async function resolveStreamUrl(tvChannel: string, _competition: string): Promise<string | undefined> {
+  if (!tvChannel) return undefined;
+  const channels = tvChannel.split(/\s*\/\s*/);
+  for (const ch of channels) {
+    const trimmed = ch.trim();
+    if (CHANNEL_STREAM_URLS[trimmed]) return CHANNEL_STREAM_URLS[trimmed];
+  }
+  return undefined;
+}
+
+// ──────────────────────────────────────────────────
+// YouTube: Search for specific match live stream URL
+// ──────────────────────────────────────────────────
+export async function findYouTubeStreamForMatch(
+  channelName: string,
+  homeTeam: string,
+  awayTeam: string,
+): Promise<string | null> {
+  const ytChannel = YOUTUBE_CHANNELS[channelName];
+  if (!ytChannel) return null;
+
+  const normalize = (s: string) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9 ]/g, '');
+  const homeLower = normalize(homeTeam);
+  const awayLower = normalize(awayTeam);
+  const homeWords = homeLower.split(' ').filter((w: string) => w.length > 3);
+  const awayWords = awayLower.split(' ').filter((w: string) => w.length > 3);
+
+  const titleMatches = (title: string): boolean => {
+    const t = normalize(title);
+    const hasHome = t.includes(homeLower) || homeWords.some((w: string) => t.includes(w));
+    const hasAway = t.includes(awayLower) || awayWords.some((w: string) => t.includes(w));
+    return hasHome && hasAway;
+  };
+
+  const handle = ytChannel.handle.replace('@', '');
+
+  // Attempt 1: channel /streams page (lists upcoming premieres)
+  try {
+    const html = await fetchUrl(`https://www.youtube.com/@${handle}/streams`);
+    if (html) {
+      const found = scanYtHtmlForMatch(html, titleMatches);
+      if (found) {
+        logger.log(`[YouTube] Stream found via /streams: ${found}`);
+        return found;
+      }
+    }
+  } catch (e: any) { logger.warn(`[YouTube] streams page error: ${e?.message}`); }
+
+  // Attempt 2: YouTube search filtered to live/upcoming
+  try {
+    const q = encodeURIComponent(`${homeTeam} x ${awayTeam} ao vivo`);
+    const html = await fetchUrl(`https://www.youtube.com/results?search_query=${q}&sp=EgJAAQ%3D%3D`);
+    if (html) {
+      const found = scanYtHtmlForMatch(html, titleMatches);
+      if (found) {
+        logger.log(`[YouTube] Stream found via search: ${found}`);
+        return found;
+      }
+    }
+  } catch (e: any) { logger.warn(`[YouTube] search error: ${e?.message}`); }
+
+  logger.log(`[YouTube] No stream found for ${homeTeam} x ${awayTeam}, fallback`);
+  return ytChannel.fallback;
+}
+
+/**
+ * Parse YouTube page HTML to find a matching live/upcoming video.
+ * Tries ytInitialData JSON first, then raw regex scan as fallback.
+ */
+function scanYtHtmlForMatch(
+  html: string,
+  titleMatches: (title: string) => boolean,
+): string | null {
+  // Try to extract and parse ytInitialData
+  try {
+    const jsonMatch = html.match(/var ytInitialData\s*=\s*(\{[\s\S]+?\});\s*<\/script>/);
+    if (jsonMatch) {
+      const data = JSON.parse(jsonMatch[1]);
+      const videos = deepExtractVideos(data);
+      for (const v of videos) {
+        if ((v.isLive || v.isUpcoming) && titleMatches(v.title)) {
+          return `https://www.youtube.com/live/${v.videoId}`;
+        }
+      }
+      // Also check if any title matches even without live badge (upcoming premiere may lack badge)
+      for (const v of videos) {
+        if (titleMatches(v.title)) {
+          return `https://www.youtube.com/live/${v.videoId}`;
+        }
+      }
+    }
+  } catch { /* ignore JSON parse errors */ }
+
+  // Fallback: raw pattern scan — videoId followed by title text in JSON
+  const pattern = /"videoId":"([A-Za-z0-9_-]{11})"[^}]*?"text":"([^"]{5,120})"/g;
+  let m: RegExpExecArray | null;
+  while ((m = pattern.exec(html)) !== null) {
+    const [, videoId, title] = m;
+    if (titleMatches(title)) {
+      return `https://www.youtube.com/live/${videoId}`;
+    }
+  }
+  return null;
+}
+
+/** Recursively extract videoRenderers from ytInitialData */
+function deepExtractVideos(
+  node: any,
+  depth = 0,
+): Array<{ videoId: string; title: string; isLive: boolean; isUpcoming: boolean }> {
+  if (!node || typeof node !== 'object' || depth > 25) return [];
+  if (Array.isArray(node)) {
+    return node.flatMap((n: any) => deepExtractVideos(n, depth + 1));
+  }
+
+  const vid = node.videoRenderer || node.gridVideoRenderer;
+  if (vid?.videoId) {
+    const title: string = vid.title?.runs?.[0]?.text ?? vid.title?.simpleText ?? '';
+    const allText = JSON.stringify(vid).toUpperCase();
+    return [{
+      videoId: vid.videoId as string,
+      title,
+      isLive: allText.includes('"LIVE"') || allText.includes('AO VIVO'),
+      isUpcoming: !!vid.upcomingEventData || allText.includes('UPCOMING') || allText.includes('PREMIERE') || allText.includes('SCHEDULED'),
+    }];
+  }
+
+  return Object.values(node).flatMap((v: any) => deepExtractVideos(v, depth + 1));
+}
+
+// ──────────────────────────────────────────────────
+// Resolve ALL broadcast URLs for a match (channel -> url map)
+// Stored in match_stats.broadcastUrls
+// ──────────────────────────────────────────────────
+export async function resolveAllBroadcastUrls(
+  tvChannel: string,
+  homeTeam: string,
+  awayTeam: string,
+): Promise<Record<string, string>> {
+  if (!tvChannel) return {};
+  const channels = tvChannel.split(/\s*\/\s*/);
+  const urls: Record<string, string> = {};
+
+  for (const ch of channels) {
+    const trimmed = ch.trim();
+    if (!trimmed || trimmed === 'A definir') continue;
+
+    // YouTube-based channels: search for specific stream
+    if (YOUTUBE_CHANNELS[trimmed]) {
+      const specificUrl = await findYouTubeStreamForMatch(trimmed, homeTeam, awayTeam);
+      if (specificUrl) {
+        urls[trimmed] = specificUrl;
+        continue;
+      }
+    }
+
+    // Static URL for other channels
+    if (CHANNEL_STREAM_URLS[trimmed]) {
+      urls[trimmed] = CHANNEL_STREAM_URLS[trimmed];
+    }
+  }
+
+  return urls;
+}
+
+// ──────────────────────────────────────────────────
+// Scrape broadcast info from web for a specific match
+// ──────────────────────────────────────────────────
+export async function scrapeBroadcastInfo(homeTeam: string, awayTeam: string, competition: string): Promise<string | null> {
+  try {
+    const query = encodeURIComponent(`${homeTeam} x ${awayTeam} onde assistir ao vivo canais 2026`);
+    const url = `https://www.google.com/search?q=${query}&hl=pt-BR`;
+    const html = await fetchUrl(url);
+    if (!html) return null;
+
+    const channelPatterns = [
+      /(?:transmiss[a\u00e3]o|onde assistir|ao vivo)[^<]*?(ESPN|Disney\+|Amazon Prime Video|Prime Video|Premiere|SporTV|TV Globo|Globo|Caz[e\u00e9] TV|Caz[e\u00e9]TV|SBT|RecordTV|Record|Paramount\+|CONMEBOL|Band|YouTube)/gi,
+      /(ESPN|Disney\+|Amazon Prime|Premiere|SporTV|TV Globo|Globo|Caz[e\u00e9]|SBT|Record|Paramount|YouTube|CONMEBOL)[\s,]*(?:e|,|\s)[\s,]*(ESPN|Disney\+|Amazon Prime|Premiere|SporTV|TV Globo|Globo|Caz[e\u00e9]|SBT|Record|Paramount|YouTube|CONMEBOL)/gi,
+    ];
+
+    const found = new Set<string>();
+    for (const pattern of channelPatterns) {
+      let m;
+      while ((m = pattern.exec(html)) !== null) {
+        for (let i = 1; i < m.length; i++) {
+          if (m[i]) found.add(normalizeChannel(m[i]));
+        }
+      }
+    }
+
+    if (found.size > 0) {
+      const channels = Array.from(found).filter(Boolean);
+      if (channels.length > 0) {
+        logger.log(`Scrape found channels for ${homeTeam} x ${awayTeam}: ${channels.join(', ')}`);
+        return channels.join(' / ');
+      }
+    }
+    return null;
+  } catch (err: any) {
+    logger.warn(`scrapeBroadcastInfo error: ${err?.message || String(err)}`);
+    return null;
+  }
+}
+
+// ──────────────────────────────────────────────────
+function fetchUrl(url: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    const headers: Record<string, string> = {
+      'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0',
+      'Accept-Language': 'pt-BR,pt;q=0.9',
+    };
+    const lib = url.startsWith('https') ? https : require('http');
+    lib.get(url, { headers }, (res: any) => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        fetchUrl(res.headers.location).then(resolve);
+        return;
+      }
+      let data = '';
+      res.on('data', (chunk: string) => (data += chunk));
+      res.on('end', () => resolve(data));
+      res.on('error', () => resolve(null));
+    }).on('error', () => resolve(null));
+  });
+}

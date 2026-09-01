@@ -1,0 +1,15 @@
+{
+  "goal": "Corrigir agente de proximos jogos do Corinthians que nao mostrava o jogo de 20/08/2026 pela Libertadores",
+  "current_task": "Concluido: fix do User-Agent no fetch da ESPN + rebuild/redeploy do backend",
+  "last_action": "Agente reprocessou 75 jogos; jogo Corinthians x Rosario Central (Libertadores, 20/08 21:30) inserido e aparecendo em /api/matches/next",
+  "next_step": "Nenhum imediato; agente semanal (seg 9h) agora funcional. Monitorar proximo run.",
+  "completed_work": [
+    "Diagnostico: ESPN/Akamai retornava 403 para User-Agent Mozilla/5.0 -> fetchFromESPN processava 0 e caia no fallback meutimao (no-op)",
+    "Fix em match-fetch.service.ts fetchUrl: UA curl/7.88.1 + timeout 15s + tratar HTTP>=400 como falha",
+    "Backup do fonte (.bak.20260817), rebuild docker compose build backend, redeploy up -d",
+    "Trigger manual: 75 jogos processados; jogo 20/08 Libertadores inserido e validado no endpoint publico"
+  ],
+  "pending_steps": [],
+  "blockers": [],
+  "status": "done"
+}

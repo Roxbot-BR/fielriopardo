@@ -1,0 +1,3 @@
+fielriopardo.com.br — Sistema completo em produção — dom 05 abr 2026 14:01:27 -03
+SSL instalado: Let's Encrypt, válido até 2026-07-04
+Módulo Caravanas adicionado: /api/caravans, /caravanas, /admin/caravanas
