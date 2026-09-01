@@ -1,13 +1,13 @@
 {
-  "goal": "Corrigir hidratacao React e vinculacao de eventos de clique nos botões e links",
-  "current_task": "Ajustado inicializador de estado do contador de tempo no MatchCardLive.tsx para rodar apos a montagem no cliente",
-  "last_action": "Build e deploy executados no frontend e alteracao sincronizada no GitHub",
-  "next_step": "Aguardar teste do usuario no navegador",
+  "goal": "Garantir funcionamento dos cliques e navegacao no modo PWA standalone",
+  "current_task": "Removido backdrop fixo de notificacao e ativado Service Worker com estrategia network-first para atualizar o cache do PWA",
+  "last_action": "Build e deploy executados com sucesso no frontend e commit enviado para o GitHub",
+  "next_step": "Testar no PWA instalado",
   "completed_work": [
-    "Identificado e corrigido erro de hidratação causado por Date.now() discrepante entre SSR e cliente no MatchCardLive",
-    "Ajustado useCountdown para inicializar em null e popular o tempo apenas no useEffect",
-    "Rebuild e redeploy do container fiel-frontend concluídos com sucesso",
-    "Push para o repositório GitHub efetuado"
+    "Identificado overlay de fundo fixo (fixed inset-0 z-40) no modo PWA do NotificationBanner que bloqueava toques na tela",
+    "Removido a div de backdrop em tela cheia do NotificationBanner.tsx",
+    "Atualizado public/sw.js para capturar fetch com estrategia network-first e recarregar janelas do PWA automaticamente",
+    "Rebuild e redeploy do container fiel-frontend concluidos"
   ],
   "pending_steps": [],
   "blockers": [],
