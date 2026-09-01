@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { Button } from '@/components/ui/Button';
+import { Button, buttonVariants } from '@/components/ui/Button';
 import { CountdownTimer } from '@/components/CountdownTimer';
 
 // Channel → URL mapping for clickable streaming links
@@ -276,16 +276,12 @@ export function MatchCardLive({ initialMatch }: MatchCardLiveProps) {
               {/* CTA Button */}
               {isScheduled && match.bolaoOpen && (
                 <div className="mt-5 text-center">
-                  <Button asChild size="md" className="bg-[#C8A951] hover:bg-[#b8993f] text-black font-black">
-                    <Link href={`/bolao/jogo/${match.id}`}>🎯 Dê seu Palpite</Link>
-                  </Button>
+                  <Link href={`/bolao/jogo/${match.id}`} className={buttonVariants({ size: 'md', className: 'bg-[#C8A951] hover:bg-[#b8993f] text-black font-black' })}>🎯 Dê seu Palpite</Link>
                 </div>
               )}
               {isLive && (
                 <div className="mt-5 text-center">
-                  <Button asChild variant="outline" size="sm">
-                    <Link href={`/bolao/resultado/${match.id}`}>Ver Resultado ao Vivo</Link>
-                  </Button>
+                  <Link href={`/bolao/resultado/${match.id}`} className={buttonVariants({ variant: 'outline', size: 'sm' })}>Ver Resultado ao Vivo</Link>
                 </div>
               )}
             </div>

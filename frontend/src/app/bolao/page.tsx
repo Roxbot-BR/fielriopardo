@@ -9,7 +9,7 @@ import { PageWrapper } from '@/components/layout/PageWrapper';
 import { MatchCard } from '@/components/MatchCard';
 import { RankingTable } from '@/components/RankingTable';
 import { CountdownTimer } from '@/components/CountdownTimer';
-import { Button } from '@/components/ui/Button';
+import { Button, buttonVariants } from '@/components/ui/Button';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Spinner } from '@/components/ui/Spinner';
 import { useAuth } from '@/contexts/AuthContext';
@@ -390,9 +390,7 @@ export default function BolaoPage() {
                 <Trophy size={20} className="text-[#C8A951]" />
                 Ranking
               </h2>
-              <Button asChild variant="ghost" size="sm">
-                <Link href="/bolao/ranking">Ver completo →</Link>
-              </Button>
+              <Link href="/bolao/ranking" className={buttonVariants({ variant: 'ghost', size: 'sm' })}>Ver completo →</Link>
             </div>
             <RankingTable
               ranking={ranking}

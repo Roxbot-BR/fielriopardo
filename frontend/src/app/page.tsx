@@ -117,7 +117,7 @@ export default async function HomePage() {
             background: 'transparent',
           }}
         >
-          <div className="absolute inset-0 opacity-10"
+          <div className="absolute inset-0 opacity-10 pointer-events-none"
             style={{
               backgroundImage: `url('/logo.jpeg')`,
               backgroundSize: '300px',
@@ -125,7 +125,7 @@ export default async function HomePage() {
               backgroundPosition: 'right center',
             }}
           />
-          <div className="absolute inset-0 bg-gradient-to-r from-black/60 via-black/30 to-transparent" />
+          <div className="absolute inset-0 bg-gradient-to-r from-black/60 via-black/30 to-transparent pointer-events-none" />
           <div className="relative z-10 text-center px-4 max-w-4xl mx-auto">
             <div className="flex justify-center mb-6">
               <Image

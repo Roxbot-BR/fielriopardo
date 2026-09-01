@@ -4,7 +4,7 @@ import React from 'react';
 import Link from 'next/link';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
-import { Button } from '@/components/ui/Button';
+import { Button, buttonVariants } from '@/components/ui/Button';
 import { formatDate } from '@/lib/utils';
 import type { Match } from '@/types';
 
@@ -211,11 +211,9 @@ export function MatchCard({ match, showPredictionButton = true, size = 'default'
         {/* Prediction button */}
         {showPredictionButton && !isFinished && match.bolaoOpen && (
           <div className="mt-4">
-            <Button asChild variant="default" className="w-full text-sm">
-              <Link href={`/bolao/jogo/${match.id}`}>
-                🎯 Dar Palpite
-              </Link>
-            </Button>
+            <Link href={`/bolao/jogo/${match.id}`} className={buttonVariants({ variant: 'default', className: 'w-full text-sm' })}>
+              🎯 Dar Palpite
+            </Link>
           </div>
         )}
 
