@@ -1,4 +1,6 @@
-import React from 'react';
+'use client';
+
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { Header } from '@/components/layout/Header';
@@ -12,112 +14,66 @@ import { buttonVariants } from '@/components/ui/Button';
 import { Card, CardContent } from '@/components/ui/Card';
 import { MatchCardLive } from '@/components/MatchCardLive';
 import type { NewsItem, Match } from '@/types';
+import api from '@/lib/api';
 
-async function getNews(): Promise<NewsItem[]> {
-  try {
-    const res = await fetch(
-      `${process.env.INTERNAL_API_URL || 'http://backend:3001'}/api/news?limit=6`,
-      { next: { revalidate: 300 } }
-    );
-    if (!res.ok) return [];
-    const ntext = await res.text();
-    if (!ntext) return [];
-    return JSON.parse(ntext);
-  } catch {
-    return [];
-  }
-}
+export default function HomePage() {
+  const [news, setNews] = useState<NewsItem[]>([]);
+  const [nextMatch, setNextMatch] = useState<Match | null>(null);
+  const [bolaoStats, setBolaoStats] = useState<{ participants: number } | null>(null);
+  const [curiosity, setCuriosity] = useState<{ fact: string } | null>(null);
+  const [players, setPlayers] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
-async function getNextMatch(): Promise<Match | null> {
-  try {
-    const res = await fetch(
-      `${process.env.INTERNAL_API_URL || 'http://backend:3001'}/api/matches/next`,
-      { cache: 'no-store' }
-    );
-    if (!res.ok) return null;
-    const text = await res.text();
-    if (!text || text === 'null') return null;
-    return JSON.parse(text);
-  } catch {
-    return null;
-  }
-}
+  useEffect(() => {
+    let active = true;
 
-async function getBolaoStats(): Promise<{ participants: number; currentGame: string } | null> {
-  try {
-    const res = await fetch(
-      `${process.env.INTERNAL_API_URL || 'http://backend:3001'}/api/users/count`,
-      { cache: 'no-store' }
-    );
-    if (!res.ok) return null;
-    const text2 = await res.text();
-    if (!text2) return null;
-    try {
-      const data = JSON.parse(text2);
-      const participants = data?.total ?? 0;
-      return { participants, currentGame: '' };
-    } catch { return null; }
-  } catch {
-    return null;
-  }
-}
+    async function loadData() {
+      try {
+        const [newsRes, matchRes, usersRes, curioRes, playersRes] = await Promise.allSettled([
+          api.get('/news?limit=6'),
+          api.get('/matches/next'),
+          api.get('/users/count'),
+          api.get('/news/curiosidades'),
+          api.get('/players'),
+        ]);
 
-async function getDailyCuriosity(): Promise<{ fact: string } | null> {
-  try {
-    const res = await fetch(
-      `${process.env.INTERNAL_API_URL || 'http://backend:3001'}/api/news/curiosidades`,
-      { next: { revalidate: 3600 } }
-    );
-    if (!res.ok) return null;
-    const ctext = await res.text();
-    if (!ctext) return null;
-    try {
-      const cdata = JSON.parse(ctext);
-      if (Array.isArray(cdata) && cdata.length > 0) {
-        const item = cdata[0];
-        const fact = item.content ?? item.title ?? '';
-        return { fact };
+        if (!active) return;
+
+        if (newsRes.status === 'fulfilled' && Array.isArray(newsRes.value.data)) {
+          setNews(newsRes.value.data);
+        }
+        if (matchRes.status === 'fulfilled' && matchRes.value.data) {
+          setNextMatch(matchRes.value.data);
+        }
+        if (usersRes.status === 'fulfilled' && usersRes.value.data) {
+          setBolaoStats({ participants: usersRes.value.data.total ?? 0 });
+        }
+        if (curioRes.status === 'fulfilled' && Array.isArray(curioRes.value.data) && curioRes.value.data.length > 0) {
+          const item = curioRes.value.data[0];
+          setCuriosity({ fact: item.content ?? item.title ?? '' });
+        }
+        if (playersRes.status === 'fulfilled' && Array.isArray(playersRes.value.data)) {
+          setPlayers(playersRes.value.data.filter((p: any) => p.status === 'active'));
+        }
+      } catch {
+        /* silent */
+      } finally {
+        if (active) setLoading(false);
       }
-      return null;
-    } catch { return null; }
-  } catch {
-    return null;
-  }
-}
+    }
 
-async function getPlayers(): Promise<any[]> {
-  try {
-    const res = await fetch(
-      `${process.env.INTERNAL_API_URL || 'http://backend:3001'}/api/players`,
-      { next: { revalidate: 60 } }
-    );
-    if (!res.ok) return [];
-    const data = await res.json();
-    return Array.isArray(data) ? data.filter((p: any) => p.status === 'active') : [];
-  } catch { return []; }
-}
-
-export default async function HomePage() {
-  const [news, nextMatch, bolaoStats, curiosity, players] = await Promise.all([
-    getNews(),
-    getNextMatch(),
-    getBolaoStats(),
-    getDailyCuriosity(),
-    getPlayers(),
-  ]);
+    loadData();
+    return () => { active = false; };
+  }, []);
 
   return (
     <>
       <Header />
       <main>
         {/* HERO */}
-        <section
-          className="relative min-h-[70vh] flex items-center justify-center overflow-hidden"
-          style={{
-            background: 'transparent',
-          }}
-        >
-          <div className="absolute inset-0 opacity-10 pointer-events-none"
+        <section className="relative min-h-[70vh] flex items-center justify-center overflow-hidden">
+          <div
+            className="absolute inset-0 opacity-10 pointer-events-none"
             style={{
               backgroundImage: `url('/logo.jpeg')`,
               backgroundSize: '300px',
@@ -154,7 +110,7 @@ export default async function HomePage() {
           </div>
         </section>
 
-        {/* Próximo Jogo / Jogo ao Vivo — client component with countdown + live clock */}
+        {/* Próximo Jogo / Jogo ao Vivo */}
         <MatchCardLive initialMatch={nextMatch as any} />
 
         {/* Últimas Notícias */}
@@ -175,7 +131,7 @@ export default async function HomePage() {
               </div>
             ) : (
               <p className="text-gray-500 text-center py-8">
-                Nenhuma notícia disponível no momento.
+                {loading ? 'Carregando notícias...' : 'Nenhuma notícia disponível no momento.'}
               </p>
             )}
           </PageWrapper>
@@ -214,20 +170,21 @@ export default async function HomePage() {
                   <span className="text-2xl">👕</span>
                   <h2 className="text-2xl font-black text-white">Elenco Masculino</h2>
                 </div>
-                <a href="/elenco" className="text-sm text-[#C8A951] hover:underline">Ver todos →</a>
+                <Link href="/elenco" className="text-sm text-[#C8A951] hover:underline">Ver todos →</Link>
               </div>
               <ElencoSlider players={players} />
             </PageWrapper>
           </section>
         )}
 
-        {/* Redes Sociais */}
+        {/* Caravanas */}
         <section className="py-12 border-y border-[#2d2d2d]">
           <PageWrapper>
             <CaravanasPreview />
           </PageWrapper>
         </section>
 
+        {/* Redes Sociais */}
         <section className="py-12 bg-[#0d0d0d]/70 border-y border-[#2d2d2d]">
           <PageWrapper>
             <div className="flex items-center gap-3 mb-6">
