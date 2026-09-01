@@ -214,7 +214,21 @@ export function MatchCardLive({ initialMatch }: MatchCardLiveProps) {
     if (!match) return;
     const dateStr = matchDateObj.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'America/Sao_Paulo' });
     const timeStr = matchDateObj.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
-    const palpiteUrl = `https://fielriopardo.com.br/bolao/jogo/${match.id}?w=1`;
+    const palpiteUrl = `https://fielriopardo.com.br/bolao/jogo/${match.id}?v=2`;
+
+    const diff = Math.max(0, Math.floor((matchDateObj.getTime() - Date.now()) / 1000));
+    let countdownLine = '';
+    if (diff > 0) {
+      const d = Math.floor(diff / 86400);
+      const h = Math.floor((diff % 86400) / 3600);
+      const m = Math.floor((diff % 3600) / 60);
+      const parts = [];
+      if (d > 0) parts.push(`${d}d`);
+      if (h > 0 || d > 0) parts.push(`${h}h`);
+      parts.push(`${m}min`);
+      countdownLine = `⏳ *Bolão fecha em:* ${parts.join(' ')}
+`;
+    }
 
     const messageText =
       `🖤🤍 *FIEL RIO PARDO — PRÓXIMO JOGO*
@@ -227,9 +241,10 @@ export function MatchCardLive({ initialMatch }: MatchCardLiveProps) {
       `📅 ${dateStr} às ${timeStr}h
 ` +
       `🏟️ ${match.stadium}
-
 ` +
-      `🎯 *Dê seu palpite no Bolão:*`;
+      countdownLine +
+      `
+🎯 *Dê seu palpite no Bolão:*`;
 
     const fullMessage = `${messageText}
 ${palpiteUrl}`;

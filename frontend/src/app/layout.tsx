@@ -38,8 +38,8 @@ export const metadata: Metadata = {
     siteName: 'Fiel Rio Pardo',
     images: [
       {
-        url: 'https://fielriopardo.com.br/og-image.jpg',
-        secureUrl: 'https://fielriopardo.com.br/og-image.jpg',
+        url: 'https://fielriopardo.com.br/og-logo.jpg',
+        secureUrl: 'https://fielriopardo.com.br/og-logo.jpg',
         width: 1200,
         height: 630,
         type: 'image/jpeg',
@@ -53,7 +53,7 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     title: 'Fiel Rio Pardo | Torcida Organizada Corinthians',
     description: 'Torcida Organizada Fiel Rio Pardo — São José do Rio Pardo - SP',
-    images: ['https://fielriopardo.com.br/og-image.jpg'],
+    images: ['https://fielriopardo.com.br/og-logo.jpg'],
   },
 };
 
