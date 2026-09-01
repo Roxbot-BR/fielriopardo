@@ -215,7 +215,7 @@ export function MatchCardLive({ initialMatch }: MatchCardLiveProps) {
     const dateStr = matchDateObj.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'America/Sao_Paulo' });
     const timeStr = matchDateObj.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
     const palpiteUrl = `https://fielriopardo.com.br/bolao/jogo/${match.id}`;
-    
+
     const text =
       `🖤🤍 *FIEL RIO PARDO — PRÓXIMO JOGO*
 
@@ -226,20 +226,19 @@ export function MatchCardLive({ initialMatch }: MatchCardLiveProps) {
 ` +
       `📅 ${dateStr} às ${timeStr}h
 ` +
-      `🏟 ${match.stadium}
+      `🏟️ ${match.stadium}
 
 ` +
-      `🎯 *Dê seu palpite no Bolão:* 
+      `🎯 *Dê seu palpite no Bolão:*
 ` +
-      `👉 ${palpiteUrl}`;
+      `${palpiteUrl}`;
 
-    const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(text)}`;
+    const whatsappUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
 
     if (typeof navigator !== 'undefined' && navigator.share) {
       navigator.share({
         title: `${match.homeTeam} x ${match.awayTeam} — Bolão Fiel Rio Pardo`,
         text: text,
-        url: palpiteUrl,
       }).catch(() => {
         window.open(whatsappUrl, '_blank');
       });
