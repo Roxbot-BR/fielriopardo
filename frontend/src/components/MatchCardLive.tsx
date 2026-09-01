@@ -6,6 +6,14 @@ import Link from 'next/link';
 import { Button, buttonVariants } from '@/components/ui/Button';
 import { CountdownTimer } from '@/components/CountdownTimer';
 
+function WhatsAppIcon({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor">
+      <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/>
+    </svg>
+  );
+}
+
 // Channel → URL mapping for clickable streaming links
 const CHANNEL_URLS: Record<string, string> = {
   'ESPN':                'https://www.disneyplus.com',
@@ -164,6 +172,11 @@ function LiveClock({ stats }: { stats?: LiveStats | null }) {
 export function MatchCardLive({ initialMatch }: MatchCardLiveProps) {
   const [match, setMatch] = useState<MatchData | null>(initialMatch);
 
+  // Sync state when initialMatch prop changes (e.g. loaded asynchronously)
+  useEffect(() => {
+    if (initialMatch) setMatch(initialMatch);
+  }, [initialMatch]);
+
   // Refresh live/upcoming match data every 30s
   useEffect(() => {
     const refresh = async () => {
@@ -175,6 +188,8 @@ export function MatchCardLive({ initialMatch }: MatchCardLiveProps) {
         }
       } catch { /* keep current data */ }
     };
+
+    if (!match) refresh();
 
     const interval = setInterval(refresh, 30000);
     return () => clearInterval(interval);
@@ -194,6 +209,44 @@ export function MatchCardLive({ initialMatch }: MatchCardLiveProps) {
     match.competition === 'LIBERTADORES' ? 'Copa Libertadores' :
     match.competition === 'PAULISTAO' ? 'Campeonato Paulista' :
     match.competition;
+
+  const handleShareWhatsApp = () => {
+    if (!match) return;
+    const dateStr = matchDateObj.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'America/Sao_Paulo' });
+    const timeStr = matchDateObj.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
+    const palpiteUrl = `https://fielriopardo.com.br/bolao/jogo/${match.id}`;
+    
+    const text =
+      `🖤🤍 *FIEL RIO PARDO — PRÓXIMO JOGO*
+
+` +
+      `⚽ *${match.homeTeam} x ${match.awayTeam}*
+` +
+      `🏆 ${competitionLabel}
+` +
+      `📅 ${dateStr} às ${timeStr}h
+` +
+      `🏟 ${match.stadium}
+
+` +
+      `🎯 *Dê seu palpite no Bolão:* 
+` +
+      `👉 ${palpiteUrl}`;
+
+    const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(text)}`;
+
+    if (typeof navigator !== 'undefined' && navigator.share) {
+      navigator.share({
+        title: `${match.homeTeam} x ${match.awayTeam} — Bolão Fiel Rio Pardo`,
+        text: text,
+        url: palpiteUrl,
+      }).catch(() => {
+        window.open(whatsappUrl, '_blank');
+      });
+    } else {
+      window.open(whatsappUrl, '_blank');
+    }
+  };
 
   return (
     <>
@@ -273,15 +326,31 @@ export function MatchCardLive({ initialMatch }: MatchCardLiveProps) {
                 </div>
               )}
 
-              {/* CTA Button */}
+              {/* CTA Buttons */}
               {isScheduled && match.bolaoOpen && (
-                <div className="mt-5 text-center">
-                  <Link href={`/bolao/jogo/${match.id}`} className={buttonVariants({ size: 'md', className: 'bg-[#C8A951] hover:bg-[#b8993f] text-black font-black' })}>🎯 Dê seu Palpite</Link>
+                <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
+                  <Link href={`/bolao/jogo/${match.id}`} className={buttonVariants({ size: 'md', className: 'bg-[#C8A951] hover:bg-[#b8993f] text-black font-black' })}>
+                    🎯 Dê seu Palpite
+                  </Link>
+                  <button
+                    onClick={handleShareWhatsApp}
+                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#25D366] hover:bg-[#20ba5a] text-black font-extrabold text-sm transition-all shadow-md shadow-[#25D366]/20 cursor-pointer"
+                  >
+                    <WhatsAppIcon size={18} />
+                    <span>Compartilhar</span>
+                  </button>
                 </div>
               )}
               {isLive && (
-                <div className="mt-5 text-center">
+                <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
                   <Link href={`/bolao/resultado/${match.id}`} className={buttonVariants({ variant: 'outline', size: 'sm' })}>Ver Resultado ao Vivo</Link>
+                  <button
+                    onClick={handleShareWhatsApp}
+                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#25D366] hover:bg-[#20ba5a] text-black font-bold text-xs transition-all shadow-md shadow-[#25D366]/20 cursor-pointer"
+                  >
+                    <WhatsAppIcon size={16} />
+                    <span>Compartilhar</span>
+                  </button>
                 </div>
               )}
             </div>
