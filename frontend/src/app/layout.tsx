@@ -36,7 +36,16 @@ export const metadata: Metadata = {
     description: 'Torcida Organizada Fiel Rio Pardo — São José do Rio Pardo - SP',
     url: 'https://fielriopardo.com.br',
     siteName: 'Fiel Rio Pardo',
-    images: [{ url: 'https://fielriopardo.com.br/og-image.jpg', width: 1200, height: 630, alt: 'Fiel Rio Pardo' }],
+    images: [
+      {
+        url: 'https://fielriopardo.com.br/og-image.jpg',
+        secureUrl: 'https://fielriopardo.com.br/og-image.jpg',
+        width: 1200,
+        height: 630,
+        type: 'image/jpeg',
+        alt: 'Fiel Rio Pardo',
+      },
+    ],
     locale: 'pt_BR',
     type: 'website',
   },

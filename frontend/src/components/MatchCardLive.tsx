@@ -214,7 +214,7 @@ export function MatchCardLive({ initialMatch }: MatchCardLiveProps) {
     if (!match) return;
     const dateStr = matchDateObj.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'America/Sao_Paulo' });
     const timeStr = matchDateObj.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
-    const palpiteUrl = `https://fielriopardo.com.br/bolao/jogo/${match.id}`;
+    const palpiteUrl = `https://fielriopardo.com.br/bolao/jogo/${match.id}?w=1`;
 
     const messageText =
       `🖤🤍 *FIEL RIO PARDO — PRÓXIMO JOGO*
