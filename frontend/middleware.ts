@@ -14,16 +14,26 @@ function decodeJwtPayload(token: string): Record<string, unknown> | null {
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Never protect the login page itself
-  if (pathname.startsWith('/bolao/entrar') || pathname.startsWith('/bolao/cadastro')) {
+  // Public bolão pages (accessible to all visitors without redirect)
+  const isPublicBolaoPath =
+    pathname === '/bolao' ||
+    pathname === '/bolao/' ||
+    pathname.startsWith('/bolao/ranking') ||
+    pathname.startsWith('/bolao/entrar') ||
+    pathname.startsWith('/bolao/cadastro') ||
+    pathname.startsWith('/bolao/redefinir-senha') ||
+    pathname.startsWith('/bolao/acertadores') ||
+    pathname.startsWith('/bolao/resultado');
+
+  if (isPublicBolaoPath) {
     return NextResponse.next();
   }
 
   const isAdminPath  = pathname.startsWith('/admin');
   const isMasterPath = pathname.startsWith('/master');
-  const isBolaoPath  = pathname.startsWith('/bolao');
+  const isProtectedBolaoPath = pathname.startsWith('/bolao/perfil');
 
-  if (!isBolaoPath && !isAdminPath && !isMasterPath) {
+  if (!isAdminPath && !isMasterPath && !isProtectedBolaoPath) {
     return NextResponse.next();
   }
 
@@ -41,11 +51,6 @@ export function middleware(request: NextRequest) {
     const loginUrl = new URL('/bolao/entrar', request.url);
     return NextResponse.redirect(loginUrl);
   }
-
-  // Roles are in the JWT as array (sub, email only in our JWT)
-  // Client-side role checks are done in page components - just verify token exists here
-  // For master/admin routes, we'll let the page component handle role validation
-  // (since roles aren't in the JWT payload, only sub+email)
 
   return NextResponse.next();
 }

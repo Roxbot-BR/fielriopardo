@@ -211,11 +211,11 @@ export function MatchCard({ match, showPredictionButton = true, size = 'default'
         {/* Prediction button */}
         {showPredictionButton && !isFinished && match.bolaoOpen && (
           <div className="mt-4">
-            <Link href={`/bolao/jogo/${match.id}`}>
-              <Button variant="default" className="w-full text-sm">
+            <Button asChild variant="default" className="w-full text-sm">
+              <Link href={`/bolao/jogo/${match.id}`}>
                 🎯 Dar Palpite
-              </Button>
-            </Link>
+              </Link>
+            </Button>
           </div>
         )}
 

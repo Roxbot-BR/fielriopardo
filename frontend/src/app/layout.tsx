@@ -66,7 +66,7 @@ export default function RootLayout({
   return (
     <html lang="pt-BR" className={inter.className}>
       <body className="bg-transparent text-white antialiased">
-        {/* Fixed background image layer — composited separately, no scroll jank */}
+        {/* Fixed background image layer */}
         <div
           aria-hidden="true"
           style={{
@@ -76,9 +76,10 @@ export default function RootLayout({
             transform: 'translateZ(0)',
             willChange: 'transform',
             backfaceVisibility: 'hidden',
+            pointerEvents: 'none',
           }}
         />
-        {/* Semi-transparent dark overlay — 10% opacity (90% transparent) */}
+        {/* Semi-transparent dark overlay */}
         <div
           aria-hidden="true"
           style={{
@@ -86,6 +87,7 @@ export default function RootLayout({
             transform: 'translateZ(0)',
             willChange: 'transform',
             backfaceVisibility: 'hidden',
+            pointerEvents: 'none',
           }}
         />
         <AuthProvider>

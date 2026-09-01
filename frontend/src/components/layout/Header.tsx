@@ -267,13 +267,7 @@ const isMasterRole = user?.roles?.includes('MASTER');
                   </div>
                 ) : (
                   <>
-                    <Link
-                      href="/bolao/entrar"
-                      onClick={() => setMobileOpen(false)}
-                      className="block"
-                    >
-                      <Button className="w-full" size="sm">Entrar no Bolão</Button>
-                    </Link>
+                    <Button asChild className="w-full" size="sm"><Link href="/bolao/entrar" onClick={() => setMobileOpen(false)}>Entrar no Bolão</Link></Button>
                     <button
                       onClick={() => { handleShareApp(); setMobileOpen(false); }}
                       className="flex items-center justify-center gap-2 mt-2 px-3 py-2 text-sm text-[#25D366] hover:bg-[#25D366]/10 rounded-md font-semibold border border-[#25D366]/30 w-full"
