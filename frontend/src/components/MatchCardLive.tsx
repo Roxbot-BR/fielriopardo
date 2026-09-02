@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
+import toast from 'react-hot-toast';
 import { Button, buttonVariants } from '@/components/ui/Button';
 import { CountdownTimer } from '@/components/CountdownTimer';
 
@@ -171,11 +172,32 @@ function LiveClock({ stats }: { stats?: LiveStats | null }) {
 
 export function MatchCardLive({ initialMatch }: MatchCardLiveProps) {
   const [match, setMatch] = useState<MatchData | null>(initialMatch);
+  const shareImageRef = React.useRef<File | null>(null);
+  const shareImageMatchId = React.useRef<string | null>(null);
 
   // Sync state when initialMatch prop changes (e.g. loaded asynchronously)
   useEffect(() => {
     if (initialMatch) setMatch(initialMatch);
   }, [initialMatch]);
+
+  // Pre-carrega a imagem do card em segundo plano (fora do clique) para que o
+  // navigator.share() no clique seja chamado de forma sincrona, sem "await" de
+  // rede antes dele — necessario para preservar o gesto do usuario exigido
+  // pela Web Share API (em PWA instalado o navegador e mais rigido e cancela
+  // a ativacao apos qualquer await de I/O, fazendo o share cair no fallback
+  // de abrir o link no navegador).
+  useEffect(() => {
+    if (!match?.id || shareImageMatchId.current === match.id) return;
+    shareImageMatchId.current = match.id;
+    fetch(`/share-image/${match.id}`)
+      .then((res) => res.blob())
+      .then((blob) => {
+        shareImageRef.current = new File([blob], 'fiel-rio-pardo.png', { type: blob.type || 'image/png' });
+      })
+      .catch(() => {
+        shareImageRef.current = null;
+      });
+  }, [match?.id]);
 
   // Refresh live/upcoming match data every 30s
   useEffect(() => {
@@ -214,7 +236,7 @@ export function MatchCardLive({ initialMatch }: MatchCardLiveProps) {
     if (!match) return;
     const dateStr = matchDateObj.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'America/Sao_Paulo' });
     const timeStr = matchDateObj.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
-    const palpiteUrl = `https://fielriopardo.com.br/bolao/jogo/${match.id}?v=2`;
+    const palpiteUrl = `https://fielriopardo.com.br/bolao/jogo/${match.id}?v=3`;
 
     const diff = Math.max(0, Math.floor((matchDateObj.getTime() - Date.now()) / 1000));
     let countdownLine = '';
@@ -230,7 +252,10 @@ export function MatchCardLive({ initialMatch }: MatchCardLiveProps) {
 `;
     }
 
-    const messageText =
+    const tvLine = match.tvChannel ? `📺 *Onde assistir:* ${match.tvChannel}
+` : '';
+
+    const fullMessage =
       `🖤🤍 *FIEL RIO PARDO — PRÓXIMO JOGO*
 
 ` +
@@ -242,21 +267,49 @@ export function MatchCardLive({ initialMatch }: MatchCardLiveProps) {
 ` +
       `🏟️ ${match.stadium}
 ` +
+      tvLine +
       countdownLine +
       `
-🎯 *Dê seu palpite no Bolão:*`;
+🎯 *Dê seu palpite no Bolão:*
+` +
+      `${palpiteUrl}`;
 
-    const fullMessage = `${messageText}
-${palpiteUrl}`;
     const whatsappUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(fullMessage)}`;
+    const shareTitle = `${match.homeTeam} x ${match.awayTeam} — Bolão Fiel Rio Pardo`;
 
+    // A URL de "click to chat" do WhatsApp (api.whatsapp.com/send) so aceita o
+    // parametro de texto — nao existe suporte para anexar imagem por link
+    // (docs Meta: https://developers.facebook.com/docs/whatsapp/cloud-api/guides/send-media/
+    // so cobre envio via API autenticada, nao o link publico).
+    // A unica forma de incluir a imagem no compartilhamento e via Web Share API
+    // (navigator.share com "files"), que abre a folha de compartilhamento nativa
+    // do dispositivo e deixa o usuario escolher o WhatsApp.
+    //
+    // IMPORTANTE: chamar navigator.share() UMA UNICA VEZ, de forma sincrona
+    // aqui (sem await antes), pois qualquer operacao assincrona de I/O ou uma
+    // segunda chamada dentro de um .catch() consome/perde o "gesto do
+    // usuario" exigido pela API. Uma segunda tentativa de share() dentro do
+    // catch da primeira SEMPRE falha com NotAllowedError nesse caso (o gesto
+    // ja se foi), o que forcava erroneamente o fallback de abrir o navegador
+    // — por isso NAO fazemos retry de share() aqui.
     if (typeof navigator !== 'undefined' && navigator.share) {
-      navigator.share({
-        title: `${match.homeTeam} x ${match.awayTeam} — Bolão Fiel Rio Pardo`,
-        text: messageText,
-        url: palpiteUrl,
-      }).catch(() => {
-        window.open(whatsappUrl, '_blank');
+      const preloadedFile = shareImageRef.current;
+      let sharePayload: ShareData = { title: shareTitle, text: fullMessage };
+      try {
+        if (preloadedFile && navigator.canShare && navigator.canShare({ files: [preloadedFile] })) {
+          sharePayload = { ...sharePayload, files: [preloadedFile] };
+        }
+      } catch {
+        // mantem o payload so com texto
+      }
+
+      navigator.share(sharePayload).catch((err: unknown) => {
+        const name = (err as { name?: string } | undefined)?.name;
+        if (name === 'AbortError') return; // usuario cancelou de proposito
+        // Falha real ao compartilhar (ex.: anexo nao suportado neste
+        // navegador/PWA). NAO reabrimos o navegador aqui — isso tiraria o
+        // usuario do app instalado. Apenas avisa.
+        toast.error('Não foi possível compartilhar. Tente novamente.');
       });
     } else {
       window.open(whatsappUrl, '_blank');
