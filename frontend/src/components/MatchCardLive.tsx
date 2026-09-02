@@ -294,13 +294,26 @@ export function MatchCardLive({ initialMatch }: MatchCardLiveProps) {
     // — por isso NAO fazemos retry de share() aqui.
     if (typeof navigator !== 'undefined' && navigator.share) {
       const preloadedFile = shareImageRef.current;
+
+      // Em desktop (Windows/macOS/Linux), muitos apps-alvo do compartilhamento
+      // do SO — em especial o WhatsApp Desktop — ignoram o campo de texto
+      // quando um arquivo e enviado junto, recebendo so a imagem. Em celular
+      // (Android/iOS) o WhatsApp recebe texto + imagem normalmente. Por isso
+      // so tentamos anexar a imagem em dispositivos com toque (mobile-like);
+      // no desktop priorizamos o texto (com o link do palpite) sempre.
+      const isTouchLikeDevice =
+        (typeof navigator.maxTouchPoints === 'number' && navigator.maxTouchPoints > 0) ||
+        /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '');
+
       let sharePayload: ShareData = { title: shareTitle, text: fullMessage };
-      try {
-        if (preloadedFile && navigator.canShare && navigator.canShare({ files: [preloadedFile] })) {
-          sharePayload = { ...sharePayload, files: [preloadedFile] };
+      if (isTouchLikeDevice) {
+        try {
+          if (preloadedFile && navigator.canShare && navigator.canShare({ files: [preloadedFile] })) {
+            sharePayload = { ...sharePayload, files: [preloadedFile] };
+          }
+        } catch {
+          // mantem o payload so com texto
         }
-      } catch {
-        // mantem o payload so com texto
       }
 
       navigator.share(sharePayload).catch((err: unknown) => {
