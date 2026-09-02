@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { usePathname } from 'next/navigation';
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -20,6 +21,13 @@ function isIosSafari(): boolean {
 export default function PwaInstallBanner() {
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [mode, setMode] = useState<BannerMode>(null);
+  const pathname = usePathname();
+
+  // Pagina do jogo (/bolao/jogo/[id]) e o destino do link compartilhado no
+  // WhatsApp -- maior intencao de conversao, entao mostra o banner sem
+  // espera para incentivar a instalacao logo na chegada.
+  const isSharedMatchLanding = !!pathname && /^\/bolao\/jogo\/[^/]+/.test(pathname);
+  const bannerDelayMs = isSharedMatchLanding ? 0 : 3000;
 
   useEffect(() => {
     // Don't show if already running as installed PWA
@@ -34,7 +42,7 @@ export default function PwaInstallBanner() {
 
     // iOS Safari: no beforeinstallprompt — show manual instructions
     if (isIosSafari()) {
-      setTimeout(() => setMode('ios'), 3000);
+      setTimeout(() => setMode('ios'), bannerDelayMs);
       return;
     }
 
@@ -42,11 +50,11 @@ export default function PwaInstallBanner() {
     const handler = (e: Event) => {
       e.preventDefault();
       setDeferredPrompt(e as BeforeInstallPromptEvent);
-      setTimeout(() => setMode('android'), 3000);
+      setTimeout(() => setMode('android'), bannerDelayMs);
     };
     window.addEventListener('beforeinstallprompt', handler);
     return () => window.removeEventListener('beforeinstallprompt', handler);
-  }, []);
+  }, [bannerDelayMs]);
 
   const handleInstall = async () => {
     if (!deferredPrompt) return;
